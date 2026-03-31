@@ -9,7 +9,7 @@ Course concepts used:
     - Similarity metrics (Week 4): cosine similarity
     - Nearest neighbor search (Week 4/7): retrieve top-N closest vectors
 """
-
+from typing import Union, List
 import numpy as np
 import pandas as pd
 from kmeans import cosine_similarity, KMeans
@@ -69,7 +69,7 @@ def get_recommendations(
 
 
 def song_to_vector(track_name: str, df: pd.DataFrame,
-                   X_norm: np.ndarray, feature_cols: list[str]) -> np.ndarray | None:
+                   X_norm: np.ndarray, feature_cols: List[str]) -> Union[np.ndarray, None]:
     """
     Look up a song by name and return its normalized feature vector.
 
