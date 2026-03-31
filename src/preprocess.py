@@ -25,9 +25,7 @@ AUDIO_FEATURES = [
     "liveness",
     "valence",
     "tempo",
-    "duration_ms",
     "track_popularity",
-    "mode",
 ]
 
 DATA_PATH = Path(__file__).parent.parent / "data" / "spotify_songs.csv"
@@ -75,7 +73,6 @@ def min_max_normalize(X: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray
     """
     Scale each feature column to the range [0, 1].
 
-    This prevents high-magnitude features (e.g. duration_ms, tempo)
     from dominating low-magnitude features (e.g. acousticness ∈ [0, 1]).
 
     Args:
@@ -89,7 +86,7 @@ def min_max_normalize(X: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray
     X_min = X.min(axis=0)
     X_max = X.max(axis=0)
     denom = (X_max - X_min)
-    denom[denom == 0] = 1.0          # avoid divide-by-zero for constant features
+    denom[denom == 0] = 1.0          
     X_norm = (X - X_min) / denom
     return X_norm, X_min, X_max
 

@@ -24,6 +24,24 @@ Given a Spotify track a user already enjoys, the app:
 
 Download `spotify_songs.csv` from Kaggle and place it in `data/`.
 
+This project uses the **Spotify Tracks Dataset** from Kaggle.
+
+## Download Instructions
+
+1. Go to: https://www.kaggle.com/datasets/joebeachcapital/30000-spotify-songs
+2. Click **Download** (free Kaggle account required)
+3. Unzip the downloaded file
+4. Place `spotify_songs.csv` in this `data/` folder
+
+The CSV is gitignored (too large for GitHub) so every team member needs to download it once.
+
+## About the Dataset
+
+- **32,833 tracks** across 6 playlist genres: pop, rap, rock, latin, R&B, EDM
+- **12 continuous audio features** per track: danceability, energy, loudness,
+  speechiness, acousticness, instrumentalness, liveness, valence, tempo, and more
+- Source: Spotify Web API via Kaggle user @joebeachcapital
+
 ## Setup
 ```bash
 git clone https://github.com/gswon/CSCI-UA-473-ML-Project.git
