@@ -1,6 +1,6 @@
 # 🎵 Spotify Mood Clustering
 
-Automatically organizes a Spotify library into mood-based playlists using **k-means clustering** implemented from scratch, cosine-similarity recommendations, and a 2D visualization of the acoustic feature space.
+Automatically organizes a Spotify library into mood-based playlists using **k-means clustering** implemented from scratch, squared Euclidean distance, and a 2D visualization of the acoustic feature space.
 
 ## Team
 | Member | Module |
@@ -15,7 +15,7 @@ Automatically organizes a Spotify library into mood-based playlists using **k-me
 Given a Spotify track a user already enjoys, the app:
 1. Represents every song as a **feature vector** (tempo, energy, danceability, etc.)
 2. Groups all songs into *k* mood clusters using **k-means** (implemented with NumPy — no scikit-learn)
-3. Retrieves the **nearest neighbors** by cosine similarity within the matched cluster
+3. Retrieves the **nearest neighbors** by squared Euclidean distance within the matched cluster
 4. **Visualizes** all songs in 2D (via PCA) so the user can see where their taste lands
 
 ## Dataset
@@ -87,7 +87,7 @@ CSCI-UA-473-ML-Project/
 
 K-means is implemented **from scratch** using only NumPy:
 - **Initialization**: k++ seeding for better convergence
-- **Assignment**: cosine similarity distance metric
+- **Assignment**: Standard Squared Euclidean distance metric
 - **Update**: recompute centroids as cluster means
 - **Stopping**: convergence check on centroid movement + max iterations
 ```

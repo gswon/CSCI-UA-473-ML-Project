@@ -1,18 +1,36 @@
 """
-app.py — Streamlit Web Dashboard
+<<<<<<< HEAD
+app.py — Spotify Mood Playlist Generator (Personalized)
+
+Run with: streamlit run src/app.py
+
+Key feature: users select WHICH audio dimensions matter most to them
+(e.g. "I care about BPM and energy, not acousticness") and k-means
+re-clusters the songs in that weighted embedding space on the fly.
+=======
+app.py — Streamlit Web Dashboard for Spotify Mood Clusters
 
 Run with: streamlit run src/app.py
 
 Features:
-    - Search any song by name → get top-N similar songs from the same mood cluster
-    - 2D scatter plot of all songs colored by mood cluster (PCA projection)
-    - Elbow plot to justify choice of k
-    - Graceful error handling for missing CSV, unknown songs, bad input
+    - Search song by name → retrieve top-N Euclidean nearest neighbors
+    - Interactive 2D scatter plot (PCA) of acoustic feature space
+    - Elbow plot for data-driven choice of k (number of clusters)
+
+Course concepts used:
+    - Vector representations (Week 2)
+    - PCA Dimensionality Reduction (Week 6)
+    - K-Means & Euclidean Distance (Week 7)
+>>>>>>> 192fc07e374a6c12f2992bd22db2ea97230770aa
 """
 
 import sys
 from pathlib import Path
+<<<<<<< HEAD
+=======
 
+# Ensure the app can find local modules in the /src directory
+>>>>>>> 192fc07e374a6c12f2992bd22db2ea97230770aa
 sys.path.insert(0, str(Path(__file__).parent))
 
 import numpy as np
@@ -20,140 +38,442 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from preprocess import preprocess, normalize_query, AUDIO_FEATURES
+<<<<<<< HEAD
+from preprocess import (preprocess, normalize_query, apply_feature_weights,
+                        AUDIO_FEATURES, FEATURE_LABELS)
+=======
+# Local project imports
+from preprocess import preprocess, AUDIO_FEATURES
+>>>>>>> 192fc07e374a6c12f2992bd22db2ea97230770aa
 from kmeans import KMeans, elbow_method
-from recommend import get_recommendations, song_to_vector
+from recommend import get_recommendations, song_to_vector, fuzzy_search
 from reduce import pca_reduce
 from mood_labels import label_all_clusters
 
+<<<<<<< HEAD
+# ---------------------------------------------------------------------------
+# Page setup
+# ---------------------------------------------------------------------------
 st.set_page_config(page_title="🎵 Spotify Mood Clusters", page_icon="🎵", layout="wide")
 st.title("🎵 Spotify Mood Playlist Generator")
-st.caption("K-Means clustering on audio features — no genre labels, no popularity bias.")
+st.caption("Personalized k-means clustering — focus on the audio features YOU care about most.")
 
+DATA_PATH = Path(__file__).parent.parent / "data" / "tracks_features.csv"
+
+# ---------------------------------------------------------------------------
+# Data loading (cached — only runs once)
+# ---------------------------------------------------------------------------
+@st.cache_data(show_spinner="Loading 1.2M songs... (first load only)")
+=======
+# --- UI Configuration ---
+st.set_page_config(page_title="Proud Cheetahs | Spotify Mood Clusters", page_icon="🎵", layout="wide")
+st.title("🎵 Spotify Mood Playlist Generator")
+st.caption("Custom K-Means implementation using standard Euclidean distance for acoustic discovery.")
+
+# Path to the dataset (should be in /data/spotify_songs.csv)
 DATA_PATH = Path(__file__).parent.parent / "data" / "spotify_songs.csv"
 
-@st.cache_data(show_spinner="Loading dataset...")
+# --- Data & Model Caching ---
+# We use st.cache to ensure the model doesn't re-train every time the user clicks a button.
+
+@st.cache_data(show_spinner="Preparing dataset...")
+>>>>>>> 192fc07e374a6c12f2992bd22db2ea97230770aa
 def load_data():
+    """Loads and scales the Spotify dataset using src/preprocess.py."""
     return preprocess(DATA_PATH)
 
-@st.cache_resource(show_spinner="Fitting k-means clusters...")
-def fit_model(k: int):
-    X_norm, _, _, _ = load_data()
-    model = KMeans(k=k, random_seed=42)
-    model.fit(X_norm)
-    return model
+<<<<<<< HEAD
 
-@st.cache_data(show_spinner="Projecting to 2D...")
-def get_2d(k: int):
-    X_norm, _, _, _ = load_data()
-    return pca_reduce(X_norm)
-
+# ---------------------------------------------------------------------------
+# Sidebar — ALL user controls live here
+# ---------------------------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ Settings")
-    k = st.slider("Number of mood clusters (k)", min_value=2, max_value=20, value=8)
-    top_n = st.slider("Recommendations to return", min_value=3, max_value=30, value=10)
-    show_elbow = st.checkbox("Show elbow plot", value=False)
-    st.divider()
-    st.markdown("**Algorithm:** K-Means from scratch (NumPy)")
-    st.markdown("**Dataset:** [Spotify Tracks (Kaggle)](https://www.kaggle.com/datasets/joebeachcapital/30000-spotify-songs)")
 
+    k = st.slider("Number of mood clusters (k)", 2, 20, 8,
+                  help="How many distinct mood playlists to create.")
+    top_n = st.slider("Recommendations to show", 3, 30, 10)
+
+    st.divider()
+
+    # ── Feature weight controls ──────────────────────────────────────────
+    st.subheader("🎛️ What matters to YOU?")
+    st.caption(
+        "Drag each slider to tell the algorithm how much to emphasize "
+        "that feature when grouping and recommending songs. "
+        "Setting something to 0 ignores it completely."
+    )
+
+    # Quick preset buttons
+    preset_col1, preset_col2, preset_col3 = st.columns(3)
+    with preset_col1:
+        dance_preset = st.button("💃 Dance", use_container_width=True,
+                                 help="Focus on danceability + tempo + energy")
+    with preset_col2:
+        chill_preset = st.button("😌 Chill", use_container_width=True,
+                                 help="Focus on acousticness + valence + low energy")
+    with preset_col3:
+        reset_preset = st.button("↺ Reset", use_container_width=True,
+                                 help="Equal weights on all features")
+
+    # Initialize session state for weights
+    if "weights" not in st.session_state:
+        st.session_state.weights = {f: 1.0 for f in AUDIO_FEATURES}
+
+    # Apply presets
+    if dance_preset:
+        st.session_state.weights = {
+            "danceability": 3.0, "energy": 3.0, "tempo": 3.0,
+            "loudness": 1.0, "speechiness": 0.5, "acousticness": 0.5,
+            "instrumentalness": 0.5, "liveness": 0.5, "valence": 1.0,
+        }
+    if chill_preset:
+        st.session_state.weights = {
+            "danceability": 0.5, "energy": 0.5, "tempo": 0.5,
+            "loudness": 0.5, "speechiness": 0.5, "acousticness": 3.0,
+            "instrumentalness": 2.0, "liveness": 0.5, "valence": 3.0,
+        }
+    if reset_preset:
+        st.session_state.weights = {f: 1.0 for f in AUDIO_FEATURES}
+
+    # Individual sliders
+    user_weights = {}
+    for feat in AUDIO_FEATURES:
+        label = FEATURE_LABELS.get(feat, feat)
+        user_weights[feat] = st.slider(
+            label,
+            min_value=0.0, max_value=5.0,
+            value=float(st.session_state.weights.get(feat, 1.0)),
+            step=0.5,
+            key=f"w_{feat}"
+        )
+
+    # Update session state
+    st.session_state.weights = user_weights
+    weight_vector = np.array([user_weights[f] for f in AUDIO_FEATURES], dtype=np.float32)
+
+    st.divider()
+    show_elbow = st.checkbox("Show elbow plot", value=False)
+    st.markdown("**Dataset:** 1.2M Spotify songs")
+    st.markdown("**Algorithm:** K-Means from scratch (NumPy)")
+
+# ---------------------------------------------------------------------------
+# Guard: check CSV exists
+# ---------------------------------------------------------------------------
 if not DATA_PATH.exists():
-    st.error("Dataset not found. Download `spotify_songs.csv` from Kaggle and place it in `data/`. See `data/README.md`.")
+    st.error(
+        "**Dataset not found.**\n\n"
+        f"Expected: `{DATA_PATH}`\n\n"
+        "Download the dataset and place `track_features.csv` in the `data/` folder. "
+        "See `data/README.md` for instructions."
+    )
     st.stop()
 
+# ---------------------------------------------------------------------------
+# Load data
+# ---------------------------------------------------------------------------
 try:
     X_norm, X_min, X_max, df = load_data()
 except Exception as e:
     st.error(f"Failed to load dataset: {e}")
     st.stop()
 
+# ---------------------------------------------------------------------------
+# Weighted feature matrix + k-means (re-run when weights or k change)
+# ---------------------------------------------------------------------------
+# We cache by the weight vector + k so Streamlit only reruns k-means
+# when something actually changes.
+weight_key = tuple(round(w, 1) for w in weight_vector.tolist()) + (k,)
+
+@st.cache_resource(show_spinner="Fitting k-means with your feature weights...")
+def fit_weighted_model(weight_key):
+    """Fit k-means on the weighted embedding space."""
+    _k = weight_key[-1]
+    _weights = np.array(weight_key[:-1], dtype=np.float32)
+    X_w = apply_feature_weights(X_norm, _weights)
+    model = KMeans(k=_k, random_seed=42)
+    model.fit(X_w)
+    return model
+
+@st.cache_data(show_spinner="Projecting to 2D...")
+def get_2d_projection(weight_key):
+    """PCA on weighted space so the scatter matches the clustering."""
+    _weights = np.array(weight_key[:-1], dtype=np.float32)
+    X_w = apply_feature_weights(X_norm, _weights)
+    return pca_reduce(X_w)
+
 try:
-    model = fit_model(k)
+    model = fit_weighted_model(weight_key)
 except Exception as e:
-    st.error(f"Failed to fit k-means: {e}")
+    st.error(f"K-means failed: {e}")
     st.stop()
 
+# Attach cluster labels and mood names
+df = df.iloc[:len(X_norm)].copy().reset_index(drop=True)
+df["cluster_id"] = model.labels_
+=======
+@st.cache_resource(show_spinner="Fitting k-means clusters...")
+def fit_model(k: int, X_norm: np.ndarray):
+    """Initializes and fits your scratch-built K-Means model."""
+    model = KMeans(k=k, random_seed=42)
+    model.fit(X_norm)
+    return model
+
+@st.cache_data(show_spinner="Computing PCA projection...")
+def get_2d_projection(X_norm: np.ndarray):
+    """Reduces 12D features to 2D for the map visualization."""
+    return pca_reduce(X_norm)
+
+# --- Sidebar Settings ---
+with st.sidebar:
+    st.header("⚙️ Model Configuration")
+    k_value = st.slider("Number of mood clusters (k)", min_value=2, max_value=20, value=8)
+    n_recs = st.slider("Recommendations to return", min_value=3, max_value=20, value=10)
+    show_elbow = st.checkbox("Enable Elbow Plot analysis", value=False)
+    st.divider()
+    st.markdown("**Team:** Proud Cheetahs")
+    st.markdown("**Algorithm:** Euclidean K-Means (NumPy)")
+
+# --- Main Execution Flow ---
+if not DATA_PATH.exists():
+    st.error("Missing `spotify_songs.csv`. Please place the Kaggle dataset in the `/data` folder.")
+    st.stop()
+
+# 1. Load Data
+X_norm, X_min, X_max, df = load_data()
+
+# 2. Fit K-Means
+model = fit_model(k_value, X_norm)
+
+# 3. Label Clusters (Dynamic 'Mood' assignment based on centroids)
 df_display = df.iloc[:len(X_norm)].copy().reset_index(drop=True)
 df_display["cluster_id"] = model.labels_
+>>>>>>> 192fc07e374a6c12f2992bd22db2ea97230770aa
 mood_map = label_all_clusters(model.centroids, feature_names=AUDIO_FEATURES)
-df_display["mood"] = df_display["cluster_id"].map(mood_map)
+df["mood"] = df["cluster_id"].map(mood_map)
 
+<<<<<<< HEAD
+# ---------------------------------------------------------------------------
+# Tabs
+# ---------------------------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["🔍 Find Similar Songs", "🗺️ Explore Clusters", "📐 Elbow Plot"])
+=======
+# --- App Tabs ---
+tab1, tab2, tab3 = st.tabs(["🔍 Song Discovery", "🗺️ Acoustic Map", "📊 Model Evaluation"])
+>>>>>>> 192fc07e374a6c12f2992bd22db2ea97230770aa
 
+# ── Tab 1: Recommendations ──────────────────────────────────────────────────
 with tab1:
+<<<<<<< HEAD
     st.subheader("Find songs that sound like one you already love")
-    query_name = st.text_input("Enter a song name:", placeholder="e.g. Blinding Lights")
 
-    if query_name.strip() == "":
-        st.info("Type a song name above to get started.")
+    # Show active weights summary
+    active = [(FEATURE_LABELS.get(f, f), w) for f, w in user_weights.items() if w > 0]
+    active.sort(key=lambda x: -x[1])
+    top_active = [f"{label} ({w:.1f}x)" for label, w in active[:4] if w != 1.0]
+    if top_active:
+        st.info(f"**Current focus:** {' · '.join(top_active)}")
+
+    query_name = st.text_input(
+        "Enter a song name:",
+        placeholder="e.g. Bohemian Rhapsody",
+    )
+
+    if not query_name.strip():
+        st.info("Type a song name above to get started. Use the sidebar sliders to personalize results.")
     else:
-        query_vec = song_to_vector(query_name.strip(), df_display, X_norm, AUDIO_FEATURES)
+        query_vec, query_idx = song_to_vector(query_name.strip(), df, X_norm, AUDIO_FEATURES)
+
         if query_vec is None:
-            st.error(f'Song "{query_name}" not found. Check spelling or try the full track name.')
-            name_col = "track_name" if "track_name" in df_display.columns else None
-            if name_col:
-                mask = df_display[name_col].str.lower().str.contains(query_name.lower(), na=False)
-                suggestions = df_display[mask][name_col].unique()[:5]
-                if len(suggestions):
-                    st.write("Did you mean:")
-                    for s in suggestions:
-                        st.write(f"  • {s}")
+            st.error(f'**"{query_name}"** not found in the dataset.')
+            suggestions = fuzzy_search(query_name, df)
+            if suggestions:
+                st.write("**Did you mean one of these?**")
+                for s in suggestions:
+                    st.write(f"  • {s}")
         else:
-            cluster_id = int(model.predict(query_vec)[0])
+            # Apply weights to query vector before predict
+            query_w = apply_feature_weights(query_vec[np.newaxis, :], weight_vector)[0]
+            cluster_id = int(model.predict(query_w)[0])
             mood = mood_map[cluster_id]
-            col1, col2 = st.columns([1, 2])
+
+            # Song info + cluster info
+            col1, col2, col3 = st.columns(3)
+            name_col = "name" if "name" in df.columns else "track_name"
+            artist_col = "artists" if "artists" in df.columns else "track_artist"
+
             with col1:
                 st.metric("Mood Cluster", mood)
-                st.metric("Cluster ID", f"#{cluster_id}")
             with col2:
-                st.write("**Cluster centroid audio profile:**")
-                feat_df = pd.DataFrame({"Feature": AUDIO_FEATURES, "Cluster Average": model.centroids[cluster_id].round(3)})
-                st.dataframe(feat_df, use_container_width=True, hide_index=True)
+                cluster_size = int((model.labels_ == cluster_id).sum())
+                st.metric("Songs in this cluster", f"{cluster_size:,}")
+            with col3:
+                year = df.iloc[query_idx].get("year", "—") if query_idx is not None else "—"
+                st.metric("Release Year", year)
+
+            # Feature radar / bar chart for this song
+            with st.expander("🔬 Audio profile of this song vs. cluster average"):
+                song_feats = X_norm[query_idx] if query_idx is not None else query_vec
+                centroid_feats = model.centroids[cluster_id]
+
+                # Unweight centroid back to original space for display
+                feat_df = pd.DataFrame({
+                    "Feature": [FEATURE_LABELS.get(f, f) for f in AUDIO_FEATURES],
+                    "This Song": song_feats.round(3),
+                    "Cluster Average": centroid_feats.round(3),
+                })
+                fig_bar = px.bar(
+                    feat_df.melt(id_vars="Feature", var_name="Source", value_name="Value"),
+                    x="Feature", y="Value", color="Source", barmode="group",
+                    title="Song vs. Cluster Audio Profile",
+                    height=350,
+                )
+                fig_bar.update_layout(xaxis_tickangle=-30)
+                st.plotly_chart(fig_bar, use_container_width=True)
+
             st.divider()
-            st.subheader(f"Top {top_n} similar songs")
+            st.subheader(f"Top {top_n} similar songs (weighted by your preferences)")
             try:
-                recs = get_recommendations(query_vec, X_norm, df_display, model, top_n=top_n)
-                display_cols = [c for c in ["track_name", "track_artist", "playlist_genre", "similarity", "mood"] if c in recs.columns]
+                recs = get_recommendations(
+                    query_vec, X_norm, df, model,
+                    weights=weight_vector, top_n=top_n
+                )
                 recs["similarity"] = recs["similarity"].round(4)
-                st.dataframe(recs[display_cols], use_container_width=True, hide_index=True)
-            except Exception as e:
-                st.error(f"Recommendation failed: {e}")
+                show_cols = [c for c in [name_col, artist_col, "year", "similarity", "mood"]
+                             if c in recs.columns]
+                st.dataframe(recs[show_cols], use_container_width=True, hide_index=True)
+=======
+    st.subheader("Find similar sounding tracks")
+    query_name = st.text_input("Enter a song you like:", placeholder="e.g., Starboy")
 
-with tab2:
-    st.subheader("All songs projected to 2D (PCA) — colored by mood cluster")
-    st.caption("Each point is a song. Songs near each other sound similar.")
-    try:
-        X_2d = get_2d(k)
-        df_display["pca_x"] = X_2d[:, 0]
-        df_display["pca_y"] = X_2d[:, 1]
-        df_sample = df_display.sample(min(6000, len(df_display)), random_state=42)
-        hover_cols = [c for c in ["track_name", "track_artist", "playlist_genre"] if c in df_sample.columns]
-        fig = px.scatter(df_sample, x="pca_x", y="pca_y", color="mood",
-                         hover_data=hover_cols or None,
-                         title=f"Mood Clusters in Audio Feature Space (k={k}, PCA)",
-                         labels={"pca_x": "PC 1", "pca_y": "PC 2", "mood": "Mood"},
-                         opacity=0.55, height=600)
-        fig.update_traces(marker=dict(size=4))
-        st.plotly_chart(fig, use_container_width=True)
-        st.divider()
-        st.subheader("Cluster Summary")
-        summary = df_display.groupby(["cluster_id", "mood"]).size().reset_index(name="songs").sort_values("cluster_id")
-        st.dataframe(summary, use_container_width=True, hide_index=True)
-    except Exception as e:
-        st.error(f"Visualization failed: {e}")
-
-with tab3:
-    st.subheader("Elbow Method — Choosing k")
-    st.write("We run k-means for k=2..15 and look for the 'elbow' where inertia stops dropping sharply.")
-    if show_elbow:
-        with st.spinner("Running k-means for k=2..15..."):
+    if query_name.strip():
+        # Convert user text to its feature vector from the dataset
+        query_vec = song_to_vector(query_name.strip(), df_display, X_norm, AUDIO_FEATURES)
+        
+        if query_vec is None:
+            st.warning(f"Could not find '{query_name}' in the library. Try checking your spelling!")
+        else:
+            # Show the user which 'mood' their song falls into
+            current_cluster = int(model.predict(query_vec)[0])
+            st.info(f"This song is in the **{mood_map[current_cluster]}** cluster (# {current_cluster}).")
+            
+            # Retrieve recommendations using Euclidean Distance
+            st.write(f"#### Top {n_recs} Recommendations")
             try:
-                inertias = elbow_method(X_norm, k_range=range(2, 16))
-                elbow_df = pd.DataFrame({"k": list(inertias.keys()), "Inertia": list(inertias.values())})
-                fig2 = px.line(elbow_df, x="k", y="Inertia", markers=True, title="Elbow Plot")
-                fig2.add_vline(x=k, line_dash="dash", line_color="red", annotation_text=f"Current k={k}")
+                recs = get_recommendations(query_vec, X_norm, df_display, model, top_n=n_recs)
+                
+                # Format table for display
+                cols_to_show = ["track_name", "track_artist", "euclidean_distance", "mood"]
+                recs["euclidean_distance"] = recs["euclidean_distance"].round(4)
+                
+                st.dataframe(recs[cols_to_show], use_container_width=True, hide_index=True)
+                st.caption("Note: Lower Euclidean distance indicates higher acoustic similarity.")
+>>>>>>> 192fc07e374a6c12f2992bd22db2ea97230770aa
+            except Exception as e:
+                st.error(f"Error generating recommendations: {e}")
+    else:
+        st.write("Enter a track name to see the recommendation engine in action.")
+
+# ── Tab 2: Cluster scatter ────────────────────────────────────────────────
+with tab2:
+<<<<<<< HEAD
+    st.subheader("Audio Feature Space — colored by mood cluster")
+    st.caption("PCA projects the weighted high-dimensional space to 2D. Songs near each other sound similar under your current settings.")
+
+    try:
+        X_2d = get_2d_projection(weight_key)
+        df["pca_x"] = X_2d[:, 0]
+        df["pca_y"] = X_2d[:, 1]
+
+        df_sample = df.sample(min(8000, len(df)), random_state=42)
+        name_col = "name" if "name" in df.columns else "track_name"
+        artist_col = "artists" if "artists" in df.columns else "track_artist"
+        hover_cols = [c for c in [name_col, artist_col, "year"] if c in df_sample.columns]
+
+        fig = px.scatter(
+            df_sample, x="pca_x", y="pca_y",
+            color="mood",
+            hover_data=hover_cols or None,
+            title=f"Mood Clusters in Weighted Audio Space (k={k})",
+            labels={"pca_x": "PC 1", "pca_y": "PC 2", "mood": "Mood"},
+            opacity=0.5, height=600,
+        )
+        fig.update_traces(marker=dict(size=3))
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Cluster summary table
+        st.subheader("Cluster Summary")
+        summary = (
+            df.groupby(["cluster_id", "mood"])
+            .size().reset_index(name="# Songs")
+            .sort_values("cluster_id")
+        )
+        st.dataframe(summary, use_container_width=True, hide_index=True)
+
+=======
+    st.subheader("Visualizing the Music Landscape")
+    st.caption("High-dimensional audio features compressed into 2D via PCA.")
+    
+    try:
+        X_2d = get_2d_projection(X_norm)
+        df_display["PC1"] = X_2d[:, 0]
+        df_display["PC2"] = X_2d[:, 1]
+        
+        # Sampling for performance (Plotly can be slow with 30k points)
+        df_sample = df_display.sample(min(5000, len(df_display)))
+        
+        fig = px.scatter(
+            df_sample, x="PC1", y="PC2", color="mood",
+            hover_data=["track_name", "track_artist"],
+            template="plotly_dark",
+            height=600,
+            title="Acoustic Clusters (PCA Projection)"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+>>>>>>> 192fc07e374a6c12f2992bd22db2ea97230770aa
+    except Exception as e:
+        st.error(f"Visualization error: {e}")
+
+# ── Tab 3: Elbow plot ─────────────────────────────────────────────────────
+with tab3:
+<<<<<<< HEAD
+    st.subheader("Elbow Method — Choosing k")
+    st.write(
+        "Runs k-means for k=2..15 in the **current weighted space** and plots "
+        "inertia (within-cluster distance). Choose k at the elbow — where the "
+        "curve bends and stops dropping sharply. This is how we justify our k "
+        "without relying on genre labels."
+    )
+    if show_elbow:
+        with st.spinner("Running k=2..15 (may take a minute on 1.2M songs)..."):
+            try:
+                X_w = apply_feature_weights(X_norm, weight_vector)
+                inertias = elbow_method(X_w, k_range=range(2, 16))
+                elbow_df = pd.DataFrame({
+                    "k": list(inertias.keys()),
+                    "Inertia": list(inertias.values())
+                })
+                fig2 = px.line(elbow_df, x="k", y="Inertia", markers=True,
+                               title="Elbow Plot: Within-Cluster Inertia vs. k")
+                fig2.add_vline(x=k, line_dash="dash", line_color="red",
+                               annotation_text=f"Current k={k}")
                 st.plotly_chart(fig2, use_container_width=True)
             except Exception as e:
                 st.error(f"Elbow plot failed: {e}")
     else:
-        st.info("Enable 'Show elbow plot' in the sidebar to run this analysis.")
+        st.info("Enable **'Show elbow plot'** in the sidebar to run this analysis.")
+=======
+    st.subheader("The Elbow Method")
+    st.write("This plot shows the Within-Cluster Sum of Squares (Inertia) for different values of $k$.")
+    
+    if show_elbow:
+        with st.spinner("Calculating inertia for k=2..15..."):
+            inertias = elbow_method(X_norm, k_range=range(2, 16))
+            elbow_df = pd.DataFrame({"k": list(inertias.keys()), "Inertia": list(inertias.values())})
+            
+            fig_elbow = px.line(elbow_df, x="k", y="Inertia", markers=True)
+            fig_elbow.add_vline(x=k_value, line_dash="dash", line_color="red", annotation_text="Current k")
+            st.plotly_chart(fig_elbow, use_container_width=True)
+    else:
+        st.info("Check 'Enable Elbow Plot' in the sidebar to see the mathematical justification for your cluster count.")
+>>>>>>> 192fc07e374a6c12f2992bd22db2ea97230770aa
