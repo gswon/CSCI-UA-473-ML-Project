@@ -100,26 +100,17 @@ def extract_features(df: pd.DataFrame,
 
 def min_max_normalize(X: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-<<<<<<< HEAD
     Scale each feature column to [0, 1].
 
     Returns:
         X_norm, X_min, X_max  — save X_min/X_max to normalize query vectors later
-=======
-    Scale each feature column to the range [0, 1].
->>>>>>> 192fc07e374a6c12f2992bd22db2ea97230770aa
     """
     X_min = X.min(axis=0)
     X_max = X.max(axis=0)
     
     # Avoid division by zero if a feature has no variance
     denom = (X_max - X_min)
-<<<<<<< HEAD
     denom[denom == 0] = 1.0
-=======
-    denom[denom == 0] = 1.0          
-    
->>>>>>> 192fc07e374a6c12f2992bd22db2ea97230770aa
     X_norm = (X - X_min) / denom
     return X_norm.astype(np.float32), X_min, X_max
 
@@ -170,7 +161,6 @@ def normalize_query(query: np.ndarray, X_min: np.ndarray, X_max: np.ndarray) -> 
 
 def preprocess(path: Path = DATA_PATH) -> tuple[np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
     """
-<<<<<<< HEAD
     Full pipeline: load → extract → normalize.
 
     Returns:
@@ -183,14 +173,3 @@ def preprocess(path: Path = DATA_PATH) -> tuple[np.ndarray, np.ndarray, np.ndarr
     X, df_clean = extract_features(df)
     X_norm, X_min, X_max = min_max_normalize(X)
     return X_norm, X_min, X_max, df_clean
-=======
-    Full pipeline: load → extract → standardize.
-    """
-    df = load_dataset(path)
-    X = extract_features(df)
-    
-    # Use the standardize function here
-    X_norm, means, stds = standardize(X)
-    
-    return X_norm, means, stds, df
->>>>>>> 192fc07e374a6c12f2992bd22db2ea97230770aa
