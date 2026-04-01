@@ -68,27 +68,30 @@ def extract_features(df: pd.DataFrame,
     print(f"Feature matrix shape: {X.shape}")
     return X
 
-
 def min_max_normalize(X: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Scale each feature column to the range [0, 1].
-
-    from dominating low-magnitude features (e.g. acousticness ∈ [0, 1]).
-
-    Args:
-        X: (n_songs, n_features) raw feature matrix
-
-    Returns:
-        X_norm: normalized matrix, same shape as X
-        X_min:  per-feature minimum (needed to normalize query vectors)
-        X_max:  per-feature maximum
     """
     X_min = X.min(axis=0)
     X_max = X.max(axis=0)
+    
+    # Avoid division by zero if a feature has no variance
     denom = (X_max - X_min)
     denom[denom == 0] = 1.0          
+    
     X_norm = (X - X_min) / denom
     return X_norm, X_min, X_max
+
+def standardize(X: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Standardize features by removing the mean and scaling to unit variance.
+    Standardization is often preferred for Euclidean K-Means.
+    """
+    means = X.mean(axis=0)
+    stds = X.std(axis=0)
+    stds[stds == 0] = 1.0  # Avoid division by zero
+    X_norm = (X - means) / stds
+    return X_norm, means, stds
 
 
 def normalize_query(query: np.ndarray,
@@ -114,15 +117,12 @@ def normalize_query(query: np.ndarray,
 
 def preprocess(path: Path = DATA_PATH) -> tuple[np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
     """
-    Full pipeline: load → extract → normalize.
-
-    Returns:
-        X_norm: normalized feature matrix (n_songs, n_features)
-        X_min:  per-feature min (save for query normalization)
-        X_max:  per-feature max
-        df:     original DataFrame (keep for track metadata lookup)
+    Full pipeline: load → extract → standardize.
     """
     df = load_dataset(path)
     X = extract_features(df)
-    X_norm, X_min, X_max = min_max_normalize(X)
-    return X_norm, X_min, X_max, df
+    
+    # Use the standardize function here
+    X_norm, means, stds = standardize(X)
+    
+    return X_norm, means, stds, df

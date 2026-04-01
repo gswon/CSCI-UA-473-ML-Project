@@ -1,19 +1,11 @@
 """
-recommend.py — Cosine Similarity Nearest-Neighbor Retrieval
-
-Given a query song, find the most acoustically similar tracks using
-cosine similarity. Searches within the query's cluster first for speed,
-then falls back to a global search if needed.
-
-Course concepts used:
-    - Similarity metrics (Week 4): cosine similarity
-    - Nearest neighbor search (Week 4/7): retrieve top-N closest vectors
+recommend.py — Euclidean Distance Nearest-Neighbor Retrieval (Fixed for Duplicates)
 """
+
 from typing import Union, List
 import numpy as np
 import pandas as pd
-from kmeans import cosine_similarity, KMeans
-
+from kmeans import euclidean_distance_matrix, KMeans
 
 def get_recommendations(
     query_vector: np.ndarray,
@@ -24,66 +16,63 @@ def get_recommendations(
     cluster_only: bool = True,
 ) -> pd.DataFrame:
     """
-    Recommend the top_n most acoustically similar songs to a query track.
-
-    Strategy:
-        1. Predict which cluster the query belongs to.
-        2. Search within that cluster first (faster, more relevant).
-        3. If the cluster has fewer than top_n songs, broaden to global.
-
-    Args:
-        query_vector:  (n_features,) normalized feature vector of the query song
-        X_norm:        (n_songs, n_features) full normalized feature matrix
-        df:            original DataFrame with track metadata
-        model:         fitted KMeans model
-        top_n:         number of recommendations to return
-        cluster_only:  if True, restrict search to query's cluster
-
-    Returns:
-        DataFrame with top_n recommended tracks and their similarity scores.
+    Recommend unique tracks using Euclidean distance, 
+    filtering out duplicates and the query song itself.
     """
-    # --- Step 1: find the query's cluster ---
-    cluster_id = int(model.predict(query_vector)[0])
+    
+    # Ensure 2D for math
+    query_vec_2d = query_vector[np.newaxis, :] if query_vector.ndim == 1 else query_vector
+
+    # 1. Find the cluster
+    cluster_id = int(model.predict(query_vec_2d)[0])
     cluster_mask = model.labels_ == cluster_id
 
-    # --- Step 2: search within cluster or globally ---
-    if cluster_only and cluster_mask.sum() >= top_n + 1:
+    # 2. Narrow the search space (or use global if cluster is tiny)
+    if cluster_only and cluster_mask.sum() >= 50: # Bigger buffer for duplicates
         search_X = X_norm[cluster_mask]
         search_idx = np.where(cluster_mask)[0]
     else:
         search_X = X_norm
         search_idx = np.arange(len(X_norm))
 
-    # --- Step 3: compute cosine similarity to every candidate ---
-    sims = cosine_similarity(query_vector, search_X)   # (n_candidates,)
+    # 3. Calculate Euclidean distances
+    dists = euclidean_distance_matrix(search_X, query_vec_2d).flatten()
 
-    # --- Step 4: rank and return top_n (excluding the query itself if present) ---
-    ranked = np.argsort(sims)[::-1]          # descending similarity
-    top_indices = search_idx[ranked[:top_n + 1]]
+    # 4. Create a temporary DataFrame to handle the unique filtering logic
+    # We map the distances back to the metadata
+    potential_recs = df.iloc[search_idx].copy()
+    potential_recs["euclidean_distance"] = dists
+    potential_recs["cluster"] = cluster_id
 
-    results = df.iloc[top_indices].copy()
-    results["similarity"] = sims[ranked[:top_n + 1]]
-    results["cluster"] = cluster_id
+    # --- THE FIX: DROP DUPLICATES & SELF ---
+    
+    # Sort by distance first so we keep the "closest" version of a duplicate
+    potential_recs = potential_recs.sort_values("euclidean_distance", ascending=True)
 
-    return results.head(top_n).reset_index(drop=True)
+    # Drop tracks with the same name and artist
+    potential_recs = potential_recs.drop_duplicates(subset=["track_name", "track_artist"])
 
+    # Filter out the query song (distance ~ 0) 
+    # We use a tiny threshold instead of == 0 to catch floating point noise
+    potential_recs = potential_recs[potential_recs["euclidean_distance"] > 1e-5]
 
-def song_to_vector(track_name: str, df: pd.DataFrame,
-                   X_norm: np.ndarray, feature_cols: List[str]) -> Union[np.ndarray, None]:
+    return potential_recs.head(top_n).reset_index(drop=True)
+
+def song_to_vector(
+    track_name: str, 
+    df: pd.DataFrame,
+    X_norm: np.ndarray, 
+    feature_cols: List[str]
+) -> Union[np.ndarray, None]:
     """
-    Look up a song by name and return its normalized feature vector.
-
-    Args:
-        track_name:   song title to search for (case-insensitive)
-        df:           original DataFrame
-        X_norm:       normalized feature matrix (rows aligned with df)
-        feature_cols: list of feature column names (same order as X_norm)
-
-    Returns:
-        (n_features,) vector, or None if song not found.
+    Look up a song title and return its normalized feature vector.
     """
+    # Use lowercase for case-insensitive matching
     matches = df[df["track_name"].str.lower() == track_name.lower()]
+    
     if matches.empty:
         return None
+        
+    # Just take the first one if there are duplicates
     idx = matches.index[0]
     return X_norm[idx]

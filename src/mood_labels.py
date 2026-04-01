@@ -21,7 +21,7 @@ import numpy as np
 
 FEATURE_NAMES = [
     "danceability", "energy", "loudness", "speechiness",
-    "acousticness", "instrumentalness", "liveness", "valence", "tempo"
+    "acousticness", "instrumentalness", "liveness", "valence", "tempo", "track_popularity"
 ]
 
 
