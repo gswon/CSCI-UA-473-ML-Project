@@ -1,19 +1,7 @@
-"""
-recommend.py — Weighted Cosine Similarity Nearest-Neighbor Retrieval
-
-Finds the most acoustically similar songs to a query, respecting
-user-defined feature weights so that "find me something with the
-same BPM and energy" works differently from "find something with
-the same mood and acousticness."
-
-Course concepts used:
-    - Similarity metrics (Week 4): cosine similarity
-    - Nearest neighbor search: top-N retrieval in weighted embedding space
-"""
-
 import numpy as np
 import pandas as pd
-from kmeans import cosine_similarity, KMeans
+
+from kmeans import KMeans
 from preprocess import apply_feature_weights, AUDIO_FEATURES
 
 
@@ -27,37 +15,24 @@ def get_recommendations(
     cluster_only: bool = True,
 ) -> pd.DataFrame:
     """
-    Recommend the top_n most similar songs to a query track.
+    Recommend the top_n nearest songs to a query track using weighted
+    squared Euclidean distance.
 
-    When weights are provided, both the query vector and the candidate
-    vectors are scaled the same way before computing similarity — so
-    cosine distance naturally emphasizes the user's chosen dimensions.
-
-    Args:
-        query_vector:  (n_features,) normalized feature vector
-        X_norm:        (n_songs, n_features) full normalized matrix (unweighted)
-        df:            DataFrame aligned with X_norm
-        model:         fitted KMeans model (trained on weighted X)
-        weights:       (n_features,) feature importance weights, or None for uniform
-        top_n:         number of results to return
-        cluster_only:  search within query's cluster first (faster, more relevant)
-
-    Returns:
-        DataFrame with top_n recommendations and similarity scores
+    Lower distance = more similar.
     """
     n_features = X_norm.shape[1]
     if weights is None:
         weights = np.ones(n_features, dtype=np.float32)
 
-    # Apply same weighting to both query and candidates
+    # Apply the same feature weights to the query and the dataset
     query_w = apply_feature_weights(query_vector[np.newaxis, :], weights)[0]
     X_w = apply_feature_weights(X_norm, weights)
 
-    # Find which cluster the query belongs to
+    # Predict the query's cluster in weighted space
     cluster_id = int(model.predict(query_w)[0])
     cluster_mask = model.labels_ == cluster_id
 
-    # Search within cluster if large enough, else globally
+    # Search within the cluster first if it is large enough
     if cluster_only and cluster_mask.sum() >= top_n + 1:
         search_X = X_w[cluster_mask]
         search_idx = np.where(cluster_mask)[0]
@@ -65,41 +40,37 @@ def get_recommendations(
         search_X = X_w
         search_idx = np.arange(len(X_w))
 
-    # Cosine similarity in weighted space
-    sims = cosine_similarity(query_w, search_X)
+    # Squared Euclidean distance from the query to all candidates
+    dists = np.sum((search_X - query_w) ** 2, axis=1)
 
-    # Rank descending, skip the query song itself if present
-    ranked = np.argsort(sims)[::-1]
-    top_local = ranked[:top_n + 1]
+    # Rank ascending (smaller distance = more similar)
+    ranked = np.argsort(dists)
+    top_local = ranked[: top_n + 15]  # a few extras in case we drop duplicates
     top_global_idx = search_idx[top_local]
 
     results = df.iloc[top_global_idx].copy()
-    results["similarity"] = sims[top_local]
+    results["euclidean_distance"] = dists[top_local]
     results["cluster_id"] = cluster_id
-    results = results[results.index != df.index[search_idx[ranked[0]]]]  # drop exact match
 
-    # Drop tracks with the same name and artist
-    potential_recs = potential_recs.drop_duplicates(subset=["track_name", "track_artist"])
+    # Drop exact match if present
+    results = results[results["euclidean_distance"] > 1e-10]
 
-    # Filter out the query song (distance ~ 0) 
-    # We use a tiny threshold instead of == 0 to catch floating point noise
-    potential_recs = potential_recs[potential_recs["euclidean_distance"] > 1e-5]
+    # Drop duplicate song/artist pairs if those columns exist
+    subset_cols = [c for c in ["track_name", "track_artist"] if c in results.columns]
+    if subset_cols:
+        results = results.drop_duplicates(subset=subset_cols)
 
-def song_to_vector(song_name: str,
-                   df: pd.DataFrame,
-                   X_norm: np.ndarray,
-                   features: list[str] = AUDIO_FEATURES) -> tuple[np.ndarray | None, int | None]:
+    return results.head(top_n)
+
+
+def song_to_vector(
+    song_name: str,
+    df: pd.DataFrame,
+    X_norm: np.ndarray,
+    features: list[str] = AUDIO_FEATURES,
+) -> tuple[np.ndarray | None, int | None]:
     """
     Look up a song by name and return its normalized feature vector and row index.
-
-    Args:
-        song_name: track name to search (case-insensitive)
-        df:        DataFrame aligned with X_norm
-        X_norm:    normalized feature matrix
-        features:  feature column names
-
-    Returns:
-        (vector, row_index) or (None, None) if not found
     """
     name_col = "name" if "name" in df.columns else "track_name"
     if name_col not in df.columns:
@@ -116,10 +87,10 @@ def song_to_vector(song_name: str,
 def fuzzy_search(query: str, df: pd.DataFrame, max_results: int = 8) -> list[str]:
     """
     Return song names that contain the query string (case-insensitive).
-    Used to show 'did you mean?' suggestions in the UI.
     """
     name_col = "name" if "name" in df.columns else "track_name"
     if name_col not in df.columns:
         return []
+
     mask = df[name_col].str.lower().str.contains(query.lower(), na=False)
     return df[mask][name_col].unique()[:max_results].tolist()

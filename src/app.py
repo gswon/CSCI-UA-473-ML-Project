@@ -252,9 +252,9 @@ with tab1:
                     query_vec, X_norm, df, model,
                     weights=weight_vector, top_n=top_n
                 )
-                recs["similarity"] = recs["similarity"].round(4)
-                show_cols = [c for c in [name_col, artist_col, "year", "similarity", "mood"]
-                             if c in recs.columns]
+                
+                recs["euclidean_distance"] = recs["euclidean_distance"].round(4)
+                show_cols = [c for c in [name_col, artist_col, "year", "euclidean_distance", "mood"] if c in recs.columns]
                 st.dataframe(recs[show_cols], use_container_width=True, hide_index=True)
             except Exception as e:
                 st.error(f"Error generating recommendations: {e}")
