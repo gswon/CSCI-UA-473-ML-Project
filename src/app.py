@@ -123,7 +123,6 @@ if not DATA_PATH.exists():
         "**Dataset not found.**\n\n"
         f"Expected: `{DATA_PATH}`\n\n"
         "Download the dataset and place `track_features.csv` in the `data/` folder. "
-        "See `data/README.md` for instructions."
     )
     st.stop()
 
