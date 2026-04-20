@@ -23,6 +23,7 @@ from kmeans import KMeans, elbow_method
 from recommend import get_recommendations, song_to_vector, fuzzy_search
 from reduce import pca_reduce
 from mood_labels import label_all_clusters
+from vibe_extension import render_vibe_extension
 
 # ---------------------------------------------------------------------------
 # Page setup
@@ -174,7 +175,12 @@ df["mood"] = df["cluster_id"].map(mood_map)
 # ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
-tab1, tab2, tab3 = st.tabs(["🔍 Find Similar Songs", "🗺️ Explore Clusters", "📐 Elbow Plot"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "🎵 Find Similar Songs",
+    "📝 Describe a Vibe",
+    "🗺️ Explore Clusters",
+    "📉 Elbow Plot",
+])
 
 # ── Tab 1: Recommendations ──────────────────────────────────────────────────
 with tab1:
@@ -260,8 +266,12 @@ with tab1:
             else:
                 st.write("Enter a track name to see the recommendation engine in action.")
 
-# ── Tab 2: Cluster scatter ────────────────────────────────────────────────
+# ── Tab 2: Vibe extension ────────────────────────────────────────────────
 with tab2:
+    render_vibe_extension(top_n=top_n)
+
+# ── Tab 3: Cluster scatter ────────────────────────────────────────────────
+with tab3:
     st.subheader("Audio Feature Space — colored by mood cluster")
     st.caption("PCA projects the weighted high-dimensional space to 2D. Songs near each other sound similar under your current settings.")
 
@@ -298,8 +308,8 @@ with tab2:
     except Exception as e:
         st.error(f"Visualization error: {e}")
 
-# ── Tab 3: Elbow plot ─────────────────────────────────────────────────────
-with tab3:
+# ── Tab 4: Elbow plot ─────────────────────────────────────────────────────
+with tab4:
     st.subheader("Elbow Method — Choosing k")
     st.write(
         "Runs k-means for k=2..15 in the **current weighted space** and plots "
