@@ -64,16 +64,16 @@ with st.sidebar:
     )
 
     # Quick preset buttons
+    st.write("") # slight spacing
     preset_col1, preset_col2, preset_col3 = st.columns(3)
     with preset_col1:
-        dance_preset = st.button("💃 Dance", use_container_width=True,
-                                 help="Focus on danceability + tempo + energy")
+        dance_preset = st.button("Dance", width='stretch', help="Focus on danceability + tempo + energy")
     with preset_col2:
-        chill_preset = st.button("😌 Chill", use_container_width=True,
-                                 help="Focus on acousticness + valence + low energy")
+        chill_preset = st.button("Chill", width='stretch', help="Focus on acousticness + valence + low energy")
     with preset_col3:
-        reset_preset = st.button("↺ Reset", use_container_width=True,
-                                 help="Equal weights on all features")
+        reset_preset = st.button("Reset", width='stretch', help="Equal weights on all features")
+
+    st.write("") # Extra spacing before expanders
 
     # Initialize session state for weights
     if "weights" not in st.session_state:
@@ -95,17 +95,32 @@ with st.sidebar:
     if reset_preset:
         st.session_state.weights = {f: 1.0 for f in AUDIO_FEATURES}
 
-    # Individual sliders
+    # Grouped sliders for a cleaner UI
     user_weights = {}
+    
+    feature_groups = {
+        "Mood & Vibe 😊": ["valence", "energy", "danceability"],
+        "Acoustics & Setup 🎸": ["acousticness", "instrumentalness", "liveness"],
+        "Audio Properties 🔊": ["loudness", "tempo", "speechiness"]
+    }
+    
+    for group_name, feats in feature_groups.items():
+        with st.expander(group_name, expanded=True):
+            for feat in feats:
+                if feat in AUDIO_FEATURES:
+                    label = FEATURE_LABELS.get(feat, feat)
+                    user_weights[feat] = st.slider(
+                        label,
+                        min_value=0.0, max_value=5.0,
+                        value=float(st.session_state.weights.get(feat, 1.0)),
+                        step=0.5,
+                        key=f"w_{feat}"
+                    )
+    
+    # In case any AUDIO_FEATURES were not in the groups (future proofing)
     for feat in AUDIO_FEATURES:
-        label = FEATURE_LABELS.get(feat, feat)
-        user_weights[feat] = st.slider(
-            label,
-            min_value=0.0, max_value=5.0,
-            value=float(st.session_state.weights.get(feat, 1.0)),
-            step=0.5,
-            key=f"w_{feat}"
-        )
+        if feat not in user_weights:
+            user_weights[feat] = st.session_state.weights.get(feat, 1.0)
 
     # Update session state
     st.session_state.weights = user_weights
@@ -193,10 +208,30 @@ with tab1:
     if top_active:
         st.info(f"**Current focus:** {' · '.join(top_active)}")
 
-    query_name = st.text_input(
-        "Enter a song name:",
-        placeholder="e.g. Bohemian Rhapsody",
+    # Autocomplete function using streamlit_searchbox
+    from streamlit_searchbox import st_searchbox
+    
+    def search_song(searchterm: str) -> list:
+        if not searchterm:
+            return []
+        mask = df["name"].str.contains(searchterm, case=False, na=False)
+        matches = df[mask].head(10)
+        # Returns a list of tuples (Display Label, Return Value)
+        # Clean up the artist name for display
+        return [
+            (f"{row['name']} by {str(row['artists']).replace('[', '').replace(']', '').replace('\'', '')}", row['name']) 
+            for idx, row in matches.iterrows()
+        ]
+
+    query_name = st_searchbox(
+        search_song,
+        key="song_search",
+        placeholder="Enter a song name (e.g. Bohemian Rhapsody)...",
+        label="Enter a song name:"
     )
+    
+    if not query_name:
+        query_name = ""
 
     if not query_name.strip():
         st.info("Type a song name above to get started. Use the sidebar sliders to personalize results.")
@@ -222,13 +257,13 @@ with tab1:
             artist_col = "artists" if "artists" in df.columns else "track_artist"
 
             with col1:
-                st.metric("Mood Cluster", mood)
+                st.markdown(f"<p style='font-size:0.85rem; color:#888; margin-bottom:0;'>Mood Cluster</p><p style='font-size:1.2rem; font-weight:600; margin-top:0;'>{mood}</p>", unsafe_allow_html=True)
             with col2:
                 cluster_size = int((model.labels_ == cluster_id).sum())
-                st.metric("Songs in this cluster", f"{cluster_size:,}")
+                st.markdown(f"<p style='font-size:0.85rem; color:#888; margin-bottom:0;'>Songs in this cluster</p><p style='font-size:1.2rem; font-weight:600; margin-top:0;'>{cluster_size:,}</p>", unsafe_allow_html=True)
             with col3:
                 year = df.iloc[query_idx].get("year", "—") if query_idx is not None else "—"
-                st.metric("Release Year", year)
+                st.markdown(f"<p style='font-size:0.85rem; color:#888; margin-bottom:0;'>Release Year</p><p style='font-size:1.2rem; font-weight:600; margin-top:0;'>{year}</p>", unsafe_allow_html=True)
 
             # Feature radar / bar chart for this song
             with st.expander("🔬 Audio profile of this song vs. cluster average"):
@@ -248,7 +283,7 @@ with tab1:
                     height=350,
                 )
                 fig_bar.update_layout(xaxis_tickangle=-30)
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.plotly_chart(fig_bar, width='stretch')
 
             st.divider()
             st.subheader(f"Top {top_n} similar songs (weighted by your preferences)")
@@ -258,17 +293,134 @@ with tab1:
                     weights=weight_vector, top_n=top_n
                 )
                 
-                recs["euclidean_distance"] = recs["euclidean_distance"].round(4)
-                show_cols = [c for c in [name_col, artist_col, "year", "euclidean_distance", "mood"] if c in recs.columns]
-                st.dataframe(recs[show_cols], use_container_width=True, hide_index=True)
+                # Import link generators here
+                from utils.music_links import generate_spotify_search_url, generate_youtube_music_search_url, generate_youtube_play_url
+                
+                # Clean up artist names: remove brackets and single quotes
+                recs[artist_col] = recs[artist_col].astype(str).str.replace(r"\[|\]|'", "", regex=True)
+                
+                # Create hyperlink columns
+                recs["YouTube Music"] = recs.apply(
+                    lambda row: generate_youtube_music_search_url(row[name_col], row[artist_col]), axis=1
+                )
+                recs["Spotify"] = recs.apply(
+                    lambda row: generate_spotify_search_url(row[name_col], row[artist_col]), axis=1
+                )
+                
+                # Select only the specific columns
+                show_cols = [name_col, artist_col, "year", "mood"]
+                
+                # Dynamic toggle for advanced details
+                show_advanced = st.toggle("🔍 Show advanced details (Euclidean Distance & Audio Features)")
+                if show_advanced:
+                    if "euclidean_distance" in recs:
+                        recs["euclidean_distance"] = recs["euclidean_distance"].round(4)
+                        show_cols += ["euclidean_distance"]
+                    show_cols += AUDIO_FEATURES
+                    
+                show_cols += ["YouTube Music", "Spotify"]
+                display_df = recs[show_cols]
+                
+                st.write("") # spacer
+                
+                # ========== NEW CAROUSEL-STYLE GRID UI ==========
+                cols_per_row = 5
+                
+                for i in range(0, len(recs), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for j, col in enumerate(cols):
+                        if i + j < len(recs):
+                            row = recs.iloc[i + j]
+                            with col:
+                                # Use unique ID as seed so album covers stay persistent per song
+                                seed = row.get("id", str(i+j))
+                                st.image(f"https://picsum.photos/seed/{seed}/400/400", use_container_width=True)
+                                
+                                # UI Card contents
+                                st.markdown(
+                                    f"<div style='margin-top:-10px; margin-bottom: 5px;'>"
+                                    f"<p style='font-size: 1.1rem; font-weight: 600; margin-bottom: 0px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;' title=\"{row[name_col]}\">{row[name_col]}</p>"
+                                    f"<p style='font-size: 0.9rem; color: #aaa; margin-top: 0px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;'>{row[artist_col]}</p>"
+                                    f"</div>",
+                                    unsafe_allow_html=True
+                                )
+                                
+                                # Buttons and links
+                                btn_col1, btn_col2 = st.columns([1.5, 1])
+                                with btn_col1:
+                                    if st.button("▶ Listen", key=f"listen_{seed}", use_container_width=True):
+                                        st.session_state["now_playing"] = {"name": row[name_col], "artist": row[artist_col]}
+                                with btn_col2:
+                                    st.markdown(
+                                        f"<div style='text-align: right; padding-top: 4px;'>"
+                                        f"<a href='{row['Spotify']}' target='_blank' title='Open in Spotify'>"
+                                        f"<img src='https://upload.wikimedia.org/wikipedia/commons/1/19/Spotify_logo_without_text.svg' width='24' style='margin-right: 8px; vertical-align: middle; transition: transform 0.2s;'></a>"
+                                        f"<a href='{row['YouTube Music']}' target='_blank' title='Open in YouTube Music'>"
+                                        f"<img src='https://upload.wikimedia.org/wikipedia/commons/6/6a/Youtube_Music_icon.svg' width='24' style='vertical-align: middle; transition: transform 0.2s;'></a>"
+                                        f"</div>",
+                                        unsafe_allow_html=True
+                                    )
+                                st.write("") # Pad between rows
+                
+                # Show old dataframe view only if "advanced details" is toggled on
+                if show_advanced:
+                    st.divider()
+                    st.subheader("📊 Detailed Data View")
+                    st.dataframe(
+                        display_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "YouTube Music": st.column_config.LinkColumn("YouTube Music", display_text="▶ YouTube"),
+                            "Spotify": st.column_config.LinkColumn("Spotify", display_text="🎵 Spotify")
+                        }
+                    )
+                
+                # Dedicated Spotify-style sticky player utilizing session_state from the click
+                if "now_playing" in st.session_state:
+                    playing = st.session_state["now_playing"]
+                    with st.spinner("Fetching audio..."):
+                        play_url = generate_youtube_play_url(playing['name'], playing['artist'])
+                        if play_url:
+                            video_id = play_url.split("v=")[1].split("&")[0]
+                            player_html = f"""
+                            <style>
+                                .sticky-player {{
+                                    position: fixed;
+                                    bottom: 0px;
+                                    left: 0px;
+                                    width: 100vw;
+                                    background-color: #181818;
+                                    border-top: 1px solid #282828;
+                                    z-index: 999999;
+                                    display: flex;
+                                    justify-content: center;
+                                    align-items: center;
+                                    padding: 15px;
+                                    box-shadow: 0px -5px 25px rgba(0,0,0,0.8);
+                                }}
+                                /* Add padding to body to prevent content from hiding behind the player */
+                                .block-container {{ padding-bottom: 150px !important; }}
+                            </style>
+                            <div class="sticky-player">
+                                <div style="display: flex; align-items: center; justify-content: center; gap: 25px; width: 100%; max-width: 800px;">
+                                    <iframe width="280" height="110" style="border-radius:10px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);" src="https://www.youtube.com/embed/{video_id}?autoplay=1&controls=1&modestbranding=1" frameborder="0" allow="autoplay; encrypted-media"></iframe>
+                                    <div style="color: white; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; flex-direction: column; justify-content: center; min-width: 250px;">
+                                        <span style="font-weight: 700; font-size: 1.25rem; margin-bottom: 4px; color: #fff;">{playing['name']}</span>
+                                        <span style="color: #b3b3b3; font-size: 0.95rem;">{playing['artist']}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            """
+                            st.markdown(player_html, unsafe_allow_html=True)
+                        else:
+                            st.error("Could not find a video for this track.")
             except Exception as e:
                 st.error(f"Error generating recommendations: {e}")
-            else:
-                st.write("Enter a track name to see the recommendation engine in action.")
 
 # ── Tab 2: Vibe extension ────────────────────────────────────────────────
 with tab2:
-    render_vibe_extension(top_n=top_n)
+    render_vibe_extension(top_n=top_n, app_df=df)
 
 # ── Tab 3: Cluster scatter ────────────────────────────────────────────────
 with tab3:
@@ -294,7 +446,7 @@ with tab3:
             opacity=0.5, height=600,
         )
         fig.update_traces(marker=dict(size=3))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Cluster summary table
         st.subheader("Cluster Summary")
@@ -303,7 +455,7 @@ with tab3:
             .size().reset_index(name="# Songs")
             .sort_values("cluster_id")
         )
-        st.dataframe(summary, use_container_width=True, hide_index=True)
+        st.dataframe(summary, width='stretch', hide_index=True)
 
     except Exception as e:
         st.error(f"Visualization error: {e}")
@@ -330,7 +482,7 @@ with tab4:
                                title="Elbow Plot: Within-Cluster Inertia vs. k")
                 fig2.add_vline(x=k, line_dash="dash", line_color="red",
                                annotation_text=f"Current k={k}")
-                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig2, width='stretch')
             except Exception as e:
                 st.error(f"Elbow plot failed: {e}")
     else:
