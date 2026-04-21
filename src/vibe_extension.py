@@ -6,6 +6,11 @@ import streamlit as st
 import torch
 
 from models.transformer import TextTransformer
+from utils.music_links import (
+    generate_spotify_search_url,
+    generate_youtube_music_search_url,
+    generate_youtube_play_url
+)
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -64,7 +69,7 @@ def vibe_assets_exist():
     return PARQUET_PATH.exists() and VECTORS_PATH.exists() and TEXT_MODEL_PATH.exists()
 
 
-def render_vibe_extension(top_n=10):
+def render_vibe_extension(top_n=10, app_df=None):
     st.subheader("Describe the vibe you want")
     st.caption("Experimental extension: semantic text search + slider-based reranking.")
 
@@ -98,13 +103,24 @@ def render_vibe_extension(top_n=10):
         )
         return
 
-    df = load_vibe_data()
+    if app_df is not None:
+        df = app_df.dropna(subset=["name"]).reset_index(drop=True)
+    else:
+        df = load_vibe_data()
+    
     vectors = load_vibe_vectors()
     encoder, tokenizer, device = load_vibe_transformer()
 
     if df.empty or vectors is None:
         st.error("Data or vectors are missing. Cannot perform vibe search.")
         return
+
+    # Fail-safe: Ensure vectors and df align to prevent IndexErrors
+    if len(df) != len(vectors):
+        st.warning(f"Data length ({len(df)}) doesn't match vectors length ({len(vectors)}). Truncating search space to match.")
+        min_len = min(len(df), len(vectors))
+        df = df.iloc[:min_len]
+        vectors = vectors[:min_len]
 
     with st.spinner("Searching for the perfect vibe..."):
         tokens = tokenizer.encode(query)
@@ -146,13 +162,28 @@ def render_vibe_extension(top_n=10):
 
         top_results = candidate_df.sort_values(by="final_score", ascending=False).head(top_n)
 
+        # Clean artist names to remove unwanted chars like brackets and quotes
+        top_results["clean_artists"] = top_results["artists"].astype(str).str.replace(r"\[|\]|'", "", regex=True)
+
     st.markdown(f"### Results for *'{query}'*")
     for _, row in top_results.iterrows():
+        yt_link = generate_youtube_music_search_url(row["name"], row["clean_artists"])
+        sp_link = generate_spotify_search_url(row["name"], row["clean_artists"])
+        
         st.markdown(
-            f"**{row['name']}** by *{row['artists']}* "
+            f"**{row['name']}** by *{row['clean_artists']}* "
             f"(Album: {row['album']}) — Score: `{row['final_score']:.3f}` "
-            f"(Semantic sim: `{row['cosine_sim']:.3f}`)"
+            f"(Semantic sim: `{row['cosine_sim']:.3f}`)<br><br>"
+            f"<a href='{yt_link}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/6/6a/Youtube_Music_icon.svg' width='16' style='vertical-align: middle; margin-right:3px;'></a> "
+            f"<a href='{yt_link}' target='_blank' style='text-decoration:none; vertical-align: middle;'>YouTube Music</a> &nbsp; | &nbsp; "
+            f"<a href='{sp_link}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/1/19/Spotify_logo_without_text.svg' width='16' style='vertical-align: middle; margin-right:3px;'></a> "
+            f"<a href='{sp_link}' target='_blank' style='text-decoration:none; vertical-align: middle;'>Spotify</a>",
+            unsafe_allow_html=True
         )
+        if st.button("▶ Listen", key=f"vibe_play_{row['id']}"):
+            st.session_state["now_playing"] = {"name": row['name'], "artist": row['clean_artists']}
+            st.rerun()
+
         cols = st.columns(5)
         cols[0].metric("Energy", f"{row['energy']:.2f}")
         cols[1].metric("Dance", f"{row['danceability']:.2f}")
@@ -160,3 +191,7 @@ def render_vibe_extension(top_n=10):
         cols[3].metric("Acoustic", f"{row['acousticness']:.2f}")
         cols[4].metric("Tempo", f"{row['tempo']:.2f}")
         st.divider()
+
+    # Note: the sticky player is defined inside `src/app.py` directly using the `st.session_state["now_playing"]` condition.
+    # Therefore, we do not need to re-render the HTML here as long as `app.py` renders it.
+    # However, since `render_vibe_extension` is contained inside a tab, we should just let the user use the `now_playing` state.
