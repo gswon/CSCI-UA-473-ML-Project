@@ -84,19 +84,26 @@ with tab1:
     # Detect player state at the very top so CSS is injected before anything renders
     _is_playing = "now_playing" in st.session_state
 
-    # When the right-side playlist panel is visible, push main content left with
-    # CSS padding so the fixed 260px panel never overlaps page elements.
-    st.markdown(f"""<style>
-    .main .block-container {{
-        {"padding-right: 290px !important;" if _is_playing else ""}
-        padding-bottom: {"110px" if _is_playing else "20px"} !important;
-        max-width: 100% !important;
-    }}
-    @media (max-width: 900px) {{
-        #yt-playlist-panel {{ display: none !important; }}
-        .main .block-container {{ padding-right: 12px !important; }}
-    }}
-    </style>""", unsafe_allow_html=True)
+    # Only override Streamlit's layout when the player panel is visible.
+    # When not playing, inject nothing — let Streamlit use its default
+    # centering and max-width so the page looks normal.
+    if _is_playing:
+        st.markdown("""<style>
+        [data-testid="stMainBlockContainer"],
+        .main .block-container {
+            padding-right: 295px !important;
+            padding-bottom: 110px !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+        }
+        @media (max-width: 960px) {
+            [data-testid="stMainBlockContainer"],
+            .main .block-container {
+                padding-right: unset !important;
+            }
+            #yt-playlist-panel { display: none !important; }
+        }
+        </style>""", unsafe_allow_html=True)
 
     st.subheader("Find songs that sound like one you already love")
 
@@ -250,6 +257,8 @@ with tab1:
   ['yt-playlist-panel','yt-fixed-player','yt-pl-style','yt-fixed-style'].forEach(function(id){
     var el=p.getElementById(id); if(el) el.remove();
   });
+  var mc=p.querySelector('[data-testid="stMainBlockContainer"]')||p.querySelector('.main .block-container');
+  if(mc){mc.style.removeProperty('padding-right');mc.style.removeProperty('padding-bottom');}
 })();
 </script>""", height=0, scrolling=False)
 
@@ -407,11 +416,8 @@ with tab1:
 
                     # ── PCA visualization ─────────────────────────────────────
                     st.subheader("🗺️ Cluster Map (PCA)")
-                    st.caption(
-                        "PCA projects the 9-dimensional weighted feature space to 2D. "
-                        "Songs near each other sound similar under your current weights. "
-                        "⭐ Gold = your input song · 🔴 Red = top recommendations · ● Gray = everything else."
-                    )
+                    st.caption("PCA projects the 9-dimensional weighted feature space to 2D. Songs near each other sound similar under your current weights.")
+                    st.caption("⭐ Gold = your input song · 🔴 Red = top recommendations · ● Gray = everything else.")
                     try:
                         X_2d = get_2d_projection(weight_key)
                         df_tab1["pca_x"] = X_2d[:, 0]
@@ -488,7 +494,31 @@ with tab1:
                             .size().reset_index(name="# Songs")
                             .sort_values("cluster_id")
                         )
-                        st.dataframe(summary, use_container_width=True, hide_index=True)
+                        def _summary_rows(df):
+                            out = []
+                            for r in df.itertuples():
+                                n = f"{int(getattr(r, '_3', 0)):,}"
+                                out.append(
+                                    f"<tr>"
+                                    f"<td style='text-align:center;padding:6px 12px;border-bottom:1px solid #333;'>{int(r.cluster_id)}</td>"
+                                    f"<td style='text-align:left;padding:6px 12px;border-bottom:1px solid #333;'>{r.mood}</td>"
+                                    f"<td style='text-align:left;padding:6px 12px;border-bottom:1px solid #333;'>{n}</td>"
+                                    f"</tr>"
+                                )
+                            return "".join(out)
+                        rows = _summary_rows(summary)
+                        st.markdown(f"""
+                        <table style='width:100%;border-collapse:collapse;font-size:0.9rem;'>
+                          <thead>
+                            <tr>
+                              <th style='text-align:center;padding:6px 12px;border-bottom:2px solid #555;'>cluster_id</th>
+                              <th style='text-align:left;padding:6px 12px;border-bottom:2px solid #555;'>mood</th>
+                              <th style='text-align:left;padding:6px 12px;border-bottom:2px solid #555;'># Songs</th>
+                            </tr>
+                          </thead>
+                          <tbody>{rows}</tbody>
+                        </table>
+                        """, unsafe_allow_html=True)
 
                     except Exception as e:
                         st.error(f"PCA visualization error: {e}")
@@ -620,6 +650,8 @@ with tab1:
   ['yt-playlist-panel','yt-fixed-player','yt-pl-style','yt-fixed-style'].forEach(function(id){
     var el=p.getElementById(id); if(el) el.remove();
   });
+  var mc=p.querySelector('[data-testid="stMainBlockContainer"]')||p.querySelector('.main .block-container');
+  if(mc){mc.style.removeProperty('padding-right');mc.style.removeProperty('padding-bottom');}
 })();
 </script>""", height=0, scrolling=False)
                         st.rerun()
@@ -646,7 +678,34 @@ with tab1:
   var par;
   try {{ par = window.parent.document; }} catch(e) {{ par = null; }}
 
+  // Helper: find Streamlit's main block container (selector differs by version)
+  function _mc() {{
+    return par && (
+      par.querySelector('[data-testid="stMainBlockContainer"]') ||
+      par.querySelector('.main .block-container')
+    );
+  }}
+
+  // Push main content left so it never slides under the 260px fixed right panel.
+  // 260px panel + 16px right margin + 19px safety = 295px. Reset on <960px (panel hidden).
+  function _applyContentPadding() {{
+    var el = _mc(); if (!el) return;
+    var narrow = window.parent.innerWidth < 960;
+    el.style.setProperty('padding-right', narrow ? '' : '295px', 'important');
+    el.style.setProperty('padding-bottom', '110px', 'important');
+    el.style.setProperty('max-width', '100%', 'important');
+    el.style.setProperty('box-sizing', 'border-box', 'important');
+  }}
+  function _resetContentPadding() {{
+    var el = _mc(); if (!el) return;
+    el.style.removeProperty('padding-right');
+    el.style.removeProperty('padding-bottom');
+  }}
+
   if (par) {{
+    _applyContentPadding();
+    window.parent.addEventListener('resize', _applyContentPadding);
+
     var eps = par.getElementById('yt-pl-style'); if (eps) eps.remove();
     var plStyle = par.createElement('style');
     plStyle.id = 'yt-pl-style';
