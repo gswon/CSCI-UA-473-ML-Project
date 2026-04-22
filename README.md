@@ -192,6 +192,87 @@ The app also supports an **elbow plot** based on within-cluster inertia.
 
 This helps justify the number of clusters by showing how the clustering objective changes as `k` increases.
 
+### 7. Song Search Engine (`src/utils/search.py`)
+
+Typing in the search box triggers a three-tier lookup that returns results in under 50 ms even on 1.2 million songs.
+
+#### The problem with a naive approach
+
+A straightforward implementation would do something like this on every keystroke:
+
+```python
+df[df["name"].str.contains(query, case=False)].head(10)
+```
+
+On 1.2 million rows this scans the entire dataset linearly — O(N) — which takes hundreds of milliseconds and makes the UI feel sluggish.
+
+#### How we made it fast
+
+**Build phase (runs once at startup, result cached)**
+
+Instead of scanning the full DataFrame on every keystroke, we pre-build three data structures when the app loads:
+
+| Structure | What it stores | Cost to build |
+|-----------|---------------|---------------|
+| Sorted list | All unique normalised song titles, sorted alphabetically | O(N log N) |
+| Trigram inverted index | For each 3-character substring: which song titles contain it | O(N × avg trigrams per title) |
+| BK-tree | First words of song titles only, for fuzzy lookup | O(unique first words × log size) |
+
+Vectorised pandas operations (`str.lower`, `str.strip`, `duplicated`, `argsort`) replace Python loops during the build, so it completes in seconds rather than minutes.
+
+**Query phase (runs on every keystroke)**
+
+Results come back in three tiers, each only running if the previous one didn't return enough hits:
+
+**Tier 1 — Prefix match via binary search**
+
+```
+"boh" → binary search in sorted list → lands at index of "bohemian rhapsody" instantly
+```
+
+`bisect.bisect_left` finds the insertion point in O(log N). We then walk forward until titles stop starting with the query. This is effectively O(log N + k) where k is the number of matches.
+
+**Tier 2 — Substring match via trigram index**
+
+```
+"raphsody" → trigrams: {"rap", "aph", "phs", "hso", "sod", "ody"}
+           → intersect posting lists → only titles containing all 6 trigrams survive
+```
+
+Instead of scanning all titles for a substring, we look up each trigram's posting list (a `frozenset` of matching titles) and intersect them with the `&` operator. The intersection shrinks rapidly — six trigrams typically reduce millions of candidates to dozens.
+
+**Tier 3 — Fuzzy match via BK-tree (typo correction)**
+
+```
+"bohemein" → BK-tree finds "bohemian" with edit distance 2
+```
+
+A BK-tree organises words by edit distance so that a search with `max_dist=2` only visits a small fraction of nodes rather than comparing against every word. We store only the **first word** of each song title in the tree, which keeps the tree small and fast. Edit distance is computed using Damerau-Levenshtein (handles insertions, deletions, substitutions, and transpositions).
+
+**One more optimisation: unique-only normalisation**
+
+```python
+# Slow: calls _norm() 1,200,000 times
+norm_names = names.map(_norm)
+
+# Fast: calls _norm() only on unique values (far fewer), then maps back
+uniq = series.unique()
+mapping = {v: _norm(v) for v in uniq}
+norm_names = series.map(mapping)
+```
+
+Because many songs share titles (e.g. thousands of tracks called "love"), the unique set is much smaller than 1.2 million. This alone cuts normalisation time significantly during the build phase.
+
+**Result**
+
+| Operation | Naive | Optimised |
+|-----------|-------|-----------|
+| Index build | minutes (iterrows) | seconds (vectorised) |
+| Prefix search | O(N) linear scan | O(log N) binary search |
+| Substring search | O(N) linear scan | O(trigrams × bucket) |
+| Fuzzy search | O(N) edit distance calls | O(BK-tree nodes visited) |
+| `orig→artist` lookup | rebuilt every keystroke | built once, reused |
+
 ---
 
 ## Known Limitations
