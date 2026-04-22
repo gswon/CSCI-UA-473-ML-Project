@@ -69,7 +69,7 @@ def vibe_assets_exist():
     return PARQUET_PATH.exists() and VECTORS_PATH.exists() and TEXT_MODEL_PATH.exists()
 
 
-def render_vibe_extension(top_n=10, app_df=None):
+def render_vibe_extension(top_n=10):
     st.subheader("Describe the vibe you want")
     st.caption("Experimental extension: semantic text search + slider-based reranking.")
 
@@ -103,11 +103,7 @@ def render_vibe_extension(top_n=10, app_df=None):
         )
         return
 
-    if app_df is not None:
-        df = app_df.dropna(subset=["name"]).reset_index(drop=True)
-    else:
-        df = load_vibe_data()
-    
+    df = load_vibe_data()
     vectors = load_vibe_vectors()
     encoder, tokenizer, device = load_vibe_transformer()
 
@@ -115,12 +111,12 @@ def render_vibe_extension(top_n=10, app_df=None):
         st.error("Data or vectors are missing. Cannot perform vibe search.")
         return
 
-    # Fail-safe: Ensure vectors and df align to prevent IndexErrors
     if len(df) != len(vectors):
-        st.warning(f"Data length ({len(df)}) doesn't match vectors length ({len(vectors)}). Truncating search space to match.")
-        min_len = min(len(df), len(vectors))
-        df = df.iloc[:min_len]
-        vectors = vectors[:min_len]
+        st.error(
+            f"Metadata length ({len(df)}) does not match vector length ({len(vectors)}). "
+            "Rebuild processed_songs.parquet and song_vectors.npy from the same filtered dataset."
+        )
+        return
 
     with st.spinner("Searching for the perfect vibe..."):
         tokens = tokenizer.encode(query)
