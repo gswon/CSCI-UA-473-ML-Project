@@ -216,37 +216,60 @@ with tab1:
         st.info(f"**Current focus:** {' · '.join(top_active)}")
 
     # ── Song search ──────────────────────────────────────────────────────────
-    from streamlit_searchbox import st_searchbox
+    _scol1, _scol2 = st.columns(2)
+    with _scol1:
+        search_input = st.text_input(
+            "Song name:",
+            placeholder="e.g. Bohemian Rhapsody",
+            key="song_search_input",
+        )
+    with _scol2:
+        artist_input = st.text_input(
+            "Artist name: (optional — narrows results)",
+            placeholder="e.g. Queen",
+            key="artist_search_input",
+        )
 
-    def search_song(searchterm: str) -> list:
-        if not searchterm or not searchterm.strip():
-            return []
-        q = searchterm.strip().lower()
-        # Scan up to 200 candidates; deduplicate by (name, artist) to preserve covers
-        idxs = _lower_series[_lower_series.str.contains(q, regex=False, na=False)].index[:200]
-        seen, results = set(), []
-        for i in idxs:
+    query_name = ""
+    query_artist_filter = None
+    if search_input and search_input.strip():
+        q_name   = search_input.strip().lower()
+        q_artist = artist_input.strip().lower() if artist_input else ""
+
+        match_idxs = _lower_series[_lower_series.str.contains(q_name, regex=False, na=False)].index
+
+        # Filter by artist substring if provided
+        seen, options = set(), []
+        for i in match_idxs:
             name   = _names_arr[i]
             artist = _artists_arr[i]
+            if q_artist and q_artist not in artist.lower():
+                continue
             key = (name.lower(), artist.lower())
             if key not in seen:
                 seen.add(key)
-                results.append((f"{name} — {artist}", name))
-            if len(results) >= 20:
-                break
-        return results
+                options.append((name, artist))
 
-    query_name = st_searchbox(
-        search_song,
-        key="song_search",
-        placeholder="Enter a song name (e.g. Bohemian Rhapsody)...",
-        label="Enter a song name:"
-    )
-    if not query_name:
-        query_name = ""
+        if not options:
+            msg = f'No songs matching "{search_input}"'
+            if q_artist:
+                msg += f' by "{artist_input}"'
+            st.warning(msg + " found.")
+        elif len(options) == 1:
+            query_name, query_artist_filter = options[0]
+        else:
+            # Multiple matches — let user pick from a clean selectbox
+            labels = [f"{n} — {a}" for n, a in options]
+            chosen_label = st.selectbox(
+                f"{len(options)} matches — select one:",
+                labels,
+                key="song_select",
+            )
+            chosen_idx = labels.index(chosen_label)
+            query_name, query_artist_filter = options[chosen_idx]
 
     # Reset player when song, k, top_n, or any feature weight changes
-    _player_ctx = (query_name.strip(), k, top_n, weight_key)
+    _player_ctx = (query_name.strip(), query_artist_filter, k, top_n, weight_key)
     if query_name.strip() and _player_ctx != st.session_state.get("_last_player_ctx"):
         st.session_state["_last_player_ctx"] = _player_ctx
         for _k in ["now_playing", "now_playing_idx", "rec_list", "_track_data", "_track_data_key"]:
@@ -265,7 +288,21 @@ with tab1:
     if not query_name.strip():
         st.info("Type a song name above to get started. Adjust settings in the expander above to personalize results.")
     else:
-        query_vec, query_idx = song_to_vector(query_name.strip(), df_tab1, X_norm, AUDIO_FEATURES)
+        # If the user picked a specific artist version, find that exact row.
+        if query_artist_filter:
+            _name_col_t  = "name"    if "name"    in df_tab1.columns else "track_name"
+            _art_col_t   = "artists" if "artists" in df_tab1.columns else "track_artist"
+            _name_mask   = df_tab1[_name_col_t].str.lower() == query_name.strip().lower()
+            _clean_arts  = df_tab1[_art_col_t].astype(str).str.replace(r"[\[\]']", "", regex=True).str.strip()
+            _art_mask    = _clean_arts.str.lower() == query_artist_filter.lower()
+            _exact       = df_tab1[_name_mask & _art_mask]
+            if not _exact.empty:
+                query_idx = _exact.index[0]
+                query_vec = X_norm[query_idx]
+            else:
+                query_vec, query_idx = song_to_vector(query_name.strip(), df_tab1, X_norm, AUDIO_FEATURES)
+        else:
+            query_vec, query_idx = song_to_vector(query_name.strip(), df_tab1, X_norm, AUDIO_FEATURES)
 
         if query_vec is None:
             st.error(f'**"{query_name}"** not found in the dataset.')
@@ -349,56 +386,52 @@ with tab1:
                 show_cols += ["YouTube Music", "Spotify"]
                 display_df = recs[show_cols]
 
-                # ── Carousel grid ─────────────────────────────────────────────
+                _rec_list_full = [
+                    {"name": recs.iloc[_i][name_col], "artist": recs.iloc[_i][artist_col]}
+                    for _i in range(len(recs))
+                ]
+
                 st.write("")
-                cols_per_row = 5
-                for i in range(0, len(recs), cols_per_row):
-                    card_cols = st.columns(cols_per_row)
-                    for j, col in enumerate(card_cols):
-                        if i + j < len(recs):
-                            row = recs.iloc[i + j]
-                            with col:
-                                seed = row.get("id", str(i + j))
-                                st.image(f"https://picsum.photos/seed/{seed}/400/400",
-                                         use_container_width=True)
-                                st.markdown(
-                                    f"<div style='margin-top:-10px;margin-bottom:5px;'>"
-                                    f"<p style='font-size:1rem;font-weight:600;margin-bottom:0;"
-                                    f"text-overflow:ellipsis;white-space:nowrap;overflow:hidden;'"
-                                    f" title=\"{row[name_col]}\">{row[name_col]}</p>"
-                                    f"<p style='font-size:0.82rem;color:#aaa;margin-top:0;"
-                                    f"text-overflow:ellipsis;white-space:nowrap;overflow:hidden;'>"
-                                    f"{row[artist_col]}</p></div>",
-                                    unsafe_allow_html=True
-                                )
-                                btn_col1, btn_col2 = st.columns([1.5, 1])
-                                with btn_col1:
-                                    if st.button("▶ Listen", key=f"listen_{seed}",
-                                                 use_container_width=True):
-                                        st.session_state["now_playing"] = {
-                                            "name": row[name_col],
-                                            "artist": row[artist_col],
-                                            "ts": _time.time()
-                                        }
-                                        st.session_state["now_playing_idx"] = i + j
-                                        st.session_state["rec_list"] = [
-                                            {"name": recs.iloc[idx][name_col],
-                                             "artist": recs.iloc[idx][artist_col]}
-                                            for idx in range(len(recs))
-                                        ]
-                                        st.rerun()
-                                with btn_col2:
-                                    st.markdown(
-                                        f"<div style='text-align:right;padding-top:4px;'>"
-                                        f"<a href='{row['Spotify']}' target='_blank'>"
-                                        f"<img src='https://upload.wikimedia.org/wikipedia/commons/1/19/Spotify_logo_without_text.svg'"
-                                        f" width='22' style='margin-right:6px;vertical-align:middle;'></a>"
-                                        f"<a href='{row['YouTube Music']}' target='_blank'>"
-                                        f"<img src='https://upload.wikimedia.org/wikipedia/commons/6/6a/Youtube_Music_icon.svg'"
-                                        f" width='22' style='vertical-align:middle;'></a></div>",
-                                        unsafe_allow_html=True
-                                    )
-                                st.write("")
+                COLS = 5
+                for _row_start in range(0, len(recs), COLS):
+                    _row_recs = recs.iloc[_row_start:_row_start + COLS]
+                    _cols = st.columns(len(_row_recs))
+                    for _ci, _row_s in enumerate(_row_recs.itertuples()):
+                        _pos = _row_start + _ci
+                        _seed = str(getattr(_row_s, "id", str(_pos)))
+                        _sp = str(recs.iloc[_pos]["Spotify"])
+                        _yt = str(recs.iloc[_pos]["YouTube Music"])
+                        _rname = str(getattr(_row_s, name_col, ""))
+                        _rartist = str(getattr(_row_s, artist_col, ""))
+                        with _cols[_ci]:
+                            st.markdown(
+                                f"<div style='border:1px solid rgba(255,255,255,0.12);border-radius:10px;"
+                                f"overflow:hidden;background:#1a1a1a;margin-bottom:4px;position:relative;'>"
+                                f"<img src='https://picsum.photos/seed/{_seed}/200/200'"
+                                f" style='width:100%;display:block;'>"
+                                f"<div style='padding:7px 9px 8px;'>"
+                                f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;"
+                                f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'"
+                                f" title='{_rname}'>{_rname}</p>"
+                                f"<p style='font-size:0.68rem;color:#999;margin:0 0 6px;"
+                                f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
+                                f"{_rartist}</p>"
+                                f"<div style='display:flex;gap:6px;'>"
+                                f"<a href='{_sp}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/1/19/Spotify_logo_without_text.svg' width='14' style='opacity:.75'></a>"
+                                f"<a href='{_yt}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/6/6a/Youtube_Music_icon.svg' width='14' style='opacity:.75'></a>"
+                                f"</div></div></div>",
+                                unsafe_allow_html=True
+                            )
+                            if st.button("▶ Listen", key=f"listen_{_seed}_{_pos}",
+                                         use_container_width=True):
+                                st.session_state["now_playing"] = {
+                                    "name": _rname,
+                                    "artist": _rartist,
+                                    "ts": _time.time()
+                                }
+                                st.session_state["now_playing_idx"] = _pos
+                                st.session_state["rec_list"] = _rec_list_full
+                                st.rerun()
 
                 # ── Advanced details ──────────────────────────────────────────
                 if show_advanced:
