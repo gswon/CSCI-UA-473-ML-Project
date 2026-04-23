@@ -7,11 +7,12 @@ import streamlit as st
 import torch
 
 from models.transformer import TextTransformer
+from utils.cards import render_song_card
 from utils.music_links import (
     generate_spotify_search_url,
     generate_youtube_music_search_url,
 )
-from utils.thumbnails import get_video_ids_batch, thumb_url
+from utils.thumbnails import get_video_ids_batch
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -68,38 +69,6 @@ def load_vibe_transformer():
 
 def vibe_assets_exist():
     return PARQUET_PATH.exists() and VECTORS_PATH.exists() and TEXT_MODEL_PATH.exists()
-
-
-def _render_rec_card(name, artist, seed, sp_url, yt_url,
-                     border_gold=False, badge=None, video_id=""):
-    """Render one recommendation card matching the Find-Similar-Songs layout."""
-    border = "2px solid #FFD700" if border_gold else "1px solid rgba(255,255,255,0.12)"
-    badge_html = (
-        f"<div style='position:absolute;top:6px;left:6px;z-index:2;"
-        f"background:#FFD700;color:#000;font-size:0.62rem;font-weight:700;"
-        f"padding:2px 6px;border-radius:4px;'>{badge}</div>"
-        if badge else ""
-    )
-    img_src = thumb_url(video_id, size="mq", fallback_seed=str(seed))
-    st.markdown(
-        f"<div style='border:{border};border-radius:10px;"
-        f"overflow:hidden;background:#1a1a1a;margin-bottom:4px;position:relative;'>"
-        f"{badge_html}"
-        f"<img src='{img_src}'"
-        f" style='width:100%;aspect-ratio:1/1;object-fit:cover;display:block;'>"
-        f"<div style='padding:7px 9px 8px;'>"
-        f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;color:#FFFFFF;"
-        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'"
-        f" title='{name}'>{name}</p>"
-        f"<p style='font-size:0.68rem;color:#999;margin:0 0 6px;"
-        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
-        f"{artist}</p>"
-        f"<div style='display:flex;gap:6px;'>"
-        f"<a href='{sp_url}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/1/19/Spotify_logo_without_text.svg' width='14' style='opacity:.75'></a>"
-        f"<a href='{yt_url}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/6/6a/Youtube_Music_icon.svg' width='14' style='opacity:.75'></a>"
-        f"</div></div></div>",
-        unsafe_allow_html=True
-    )
 
 
 def render_vibe_extension(top_n=10):
@@ -237,7 +206,7 @@ def render_vibe_extension(top_n=10):
             _yt_url = generate_youtube_music_search_url(_name, _artist)
             _vid = _vid_map.get((_name, _artist), "")
             with _cols[_ci]:
-                _render_rec_card(
+                render_song_card(
                     name=_name, artist=_artist, seed=_seed,
                     sp_url=_sp_url, yt_url=_yt_url,
                     video_id=_vid,

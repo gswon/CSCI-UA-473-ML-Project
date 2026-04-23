@@ -24,10 +24,13 @@ from recommend import get_recommendations, song_to_vector, fuzzy_search
 from reduce import pca_reduce
 from mood_labels import label_all_clusters
 from vibe_extension import render_vibe_extension
-from utils.thumbnails import get_video_id, get_video_ids_batch, thumb_url
+from utils.cards import render_song_card, render_stat
+from utils.df_helpers import get_name_col, get_artist_col
+from utils.thumbnails import get_video_id, get_video_ids_batch
 from utils.music_links import (generate_spotify_search_url,
                                generate_youtube_music_search_url,
                                generate_youtube_play_url)
+import time as _time
 
 # ---------------------------------------------------------------------------
 # Page setup
@@ -180,8 +183,8 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def build_name_lookup(_df):
-    name_col   = "name"    if "name"    in _df.columns else "track_name"
-    artist_col = "artists" if "artists" in _df.columns else "track_artist"
+    name_col   = get_name_col(_df)
+    artist_col = get_artist_col(_df)
     names   = _df[name_col].fillna("").astype(str)
     artists = _df[artist_col].fillna("").astype(str).str.replace(r"[\[\]']", "", regex=True).str.strip()
     lower   = names.str.lower()
@@ -327,8 +330,8 @@ with tab1:
     mood_map = label_all_clusters(model.centroids, feature_names=AUDIO_FEATURES)
     df_tab1["mood"] = df_tab1["cluster_id"].map(mood_map)
 
-    name_col   = "name"    if "name"    in df_tab1.columns else "track_name"
-    artist_col = "artists" if "artists" in df_tab1.columns else "track_artist"
+    name_col   = get_name_col(df_tab1)
+    artist_col = get_artist_col(df_tab1)
 
     # Active weights summary
     active = [(FEATURE_LABELS.get(f, f), w) for f, w in user_weights.items() if w > 0]
@@ -417,10 +420,8 @@ with tab1:
     else:
         # If the user picked a specific artist version, find that exact row.
         if query_artist_filter:
-            _name_col_t  = "name"    if "name"    in df_tab1.columns else "track_name"
-            _art_col_t   = "artists" if "artists" in df_tab1.columns else "track_artist"
-            _name_mask   = df_tab1[_name_col_t].str.lower() == query_name.strip().lower()
-            _clean_arts  = df_tab1[_art_col_t].astype(str).str.replace(r"[\[\]']", "", regex=True).str.strip()
+            _name_mask   = df_tab1[name_col].str.lower() == query_name.strip().lower()
+            _clean_arts  = df_tab1[artist_col].astype(str).str.replace(r"[\[\]']", "", regex=True).str.strip()
             _art_mask    = _clean_arts.str.lower() == query_artist_filter.lower()
             _exact       = df_tab1[_name_mask & _art_mask]
             if not _exact.empty:
@@ -444,66 +445,34 @@ with tab1:
             mood       = mood_map[cluster_id]
 
             # ── Your pick: song card (left, 1/5) + features (right, 4/5) ─────
-            from utils.music_links import (generate_spotify_search_url as _gen_sp,
-                                           generate_youtube_music_search_url as _gen_yt)
-
             cluster_size = int((model.labels_ == cluster_id).sum())
             year         = df_tab1.iloc[query_idx].get("year", "—") if query_idx is not None else "—"
             _q_seed      = str(df_tab1.iloc[query_idx].get("id", query_idx)) if query_idx is not None else "query"
             _q_name      = str(query_name).strip()
             _q_artist    = str(df_tab1.iloc[query_idx].get(artist_col, "")).replace("[", "").replace("]", "").replace("'", "").strip() if query_idx is not None else ""
-            _q_sp_url    = _gen_sp(_q_name, _q_artist)
-            _q_yt_url    = _gen_yt(_q_name, _q_artist)
+            _q_sp_url    = generate_spotify_search_url(_q_name, _q_artist)
+            _q_yt_url    = generate_youtube_music_search_url(_q_name, _q_artist)
             _q_vid       = get_video_id(_q_name, _q_artist) if _q_name else ""
-            _q_img       = thumb_url(_q_vid, size="mq", fallback_seed=_q_seed)
 
             st.subheader("🎯 Your pick")
             pick_left, pick_right = st.columns([1, 4])
 
             with pick_left:
-                st.markdown(
-                    f"<div style='border:2px solid #FFD700;border-radius:10px;"
-                    f"overflow:hidden;background:#1a1a1a;margin-bottom:4px;position:relative;'>"
-                    f"<div style='position:absolute;top:6px;left:6px;z-index:2;"
-                    f"background:#FFD700;color:#000;font-size:0.62rem;font-weight:700;"
-                    f"padding:2px 6px;border-radius:4px;'>YOUR SONG</div>"
-                    f"<img src='{_q_img}'"
-                    f" style='width:100%;aspect-ratio:1/1;object-fit:cover;display:block;'>"
-                    f"<div style='padding:7px 9px 8px;'>"
-                    f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;color:#FFFFFF;"
-                    f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'"
-                    f" title='{_q_name}'>{_q_name}</p>"
-                    f"<p style='font-size:0.68rem;color:#999;margin:0 0 6px;"
-                    f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
-                    f"{_q_artist}</p>"
-                    f"<div style='display:flex;gap:6px;'>"
-                    f"<a href='{_q_sp_url}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/1/19/Spotify_logo_without_text.svg' width='14' style='opacity:.75'></a>"
-                    f"<a href='{_q_yt_url}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/6/6a/Youtube_Music_icon.svg' width='14' style='opacity:.75'></a>"
-                    f"</div></div></div>",
-                    unsafe_allow_html=True
+                render_song_card(
+                    name=_q_name, artist=_q_artist, seed=_q_seed,
+                    sp_url=_q_sp_url, yt_url=_q_yt_url,
+                    video_id=_q_vid,
+                    badge="YOUR SONG", border_gold=True,
                 )
 
             with pick_right:
-                # Top-row stat cards
                 sc1, sc2, sc3 = st.columns(3)
                 with sc1:
-                    st.markdown(
-                        f"<p style='font-size:0.85rem;color:#888;margin-bottom:0;'>Mood Cluster</p>"
-                        f"<p style='font-size:1.2rem;font-weight:600;margin-top:0;'>{mood}</p>",
-                        unsafe_allow_html=True
-                    )
+                    render_stat("Mood Cluster", mood)
                 with sc2:
-                    st.markdown(
-                        f"<p style='font-size:0.85rem;color:#888;margin-bottom:0;'>Songs in this cluster</p>"
-                        f"<p style='font-size:1.2rem;font-weight:600;margin-top:0;'>{cluster_size:,}</p>",
-                        unsafe_allow_html=True
-                    )
+                    render_stat("Songs in this cluster", f"{cluster_size:,}")
                 with sc3:
-                    st.markdown(
-                        f"<p style='font-size:0.85rem;color:#888;margin-bottom:0;'>Release Year</p>"
-                        f"<p style='font-size:1.2rem;font-weight:600;margin-top:0;'>{year}</p>",
-                        unsafe_allow_html=True
-                    )
+                    render_stat("Release Year", str(year))
 
                 # Audio profile bar chart (song vs cluster average)
                 song_feats     = X_norm[query_idx] if query_idx is not None else query_vec
@@ -537,11 +506,6 @@ with tab1:
                     query_vec, X_norm, df_tab1, model,
                     weights=weight_vector, top_n=top_n
                 )
-
-                from utils.music_links import (generate_spotify_search_url,
-                                               generate_youtube_music_search_url,
-                                               generate_youtube_play_url)
-                import time as _time
 
                 recs[artist_col] = recs[artist_col].astype(str).str.replace(r"\[|\]|'", "", regex=True)
                 recs["YouTube Music"] = recs.apply(
@@ -584,25 +548,10 @@ with tab1:
                         _rname = str(getattr(_row_s, name_col, ""))
                         _rartist = str(getattr(_row_s, artist_col, ""))
                         _rvid = _vid_map.get((_rname, _rartist), "")
-                        _rimg = thumb_url(_rvid, size="mq", fallback_seed=_seed)
                         with _cols[_ci]:
-                            st.markdown(
-                                f"<div style='border:1px solid rgba(255,255,255,0.12);border-radius:10px;"
-                                f"overflow:hidden;background:#1a1a1a;margin-bottom:4px;position:relative;'>"
-                                f"<img src='{_rimg}'"
-                                f" style='width:100%;aspect-ratio:1/1;object-fit:cover;display:block;'>"
-                                f"<div style='padding:7px 9px 8px;'>"
-                                f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;color:#FFFFFF;"
-                                f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'"
-                                f" title='{_rname}'>{_rname}</p>"
-                                f"<p style='font-size:0.68rem;color:#999;margin:0 0 6px;"
-                                f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
-                                f"{_rartist}</p>"
-                                f"<div style='display:flex;gap:6px;'>"
-                                f"<a href='{_sp}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/1/19/Spotify_logo_without_text.svg' width='14' style='opacity:.75'></a>"
-                                f"<a href='{_yt}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/6/6a/Youtube_Music_icon.svg' width='14' style='opacity:.75'></a>"
-                                f"</div></div></div>",
-                                unsafe_allow_html=True
+                            render_song_card(
+                                name=_rname, artist=_rartist, seed=_seed,
+                                sp_url=_sp, yt_url=_yt, video_id=_rvid,
                             )
                             if st.button("▶ Listen", key=f"listen_{_seed}_{_pos}",
                                          use_container_width=True):

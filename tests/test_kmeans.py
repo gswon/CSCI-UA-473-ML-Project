@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import numpy as np
 import pytest
-from kmeans import KMeans, cosine_similarity, cosine_distance_matrix
+from kmeans import KMeans, euclidean_distance_matrix
 
 
 # ---------------------------------------------------------------------------
@@ -31,39 +31,38 @@ def simple_X():
 
 
 # ---------------------------------------------------------------------------
-# Cosine similarity tests
+# Euclidean distance tests
 # ---------------------------------------------------------------------------
 
-def test_cosine_similarity_identical():
-    """A vector compared to itself should have similarity = 1.0."""
-    v = np.array([0.3, 0.6, 0.1])
-    sims = cosine_similarity(v, v[np.newaxis, :])
-    assert np.isclose(sims[0], 1.0, atol=1e-5)
-
-
-def test_cosine_similarity_orthogonal():
-    """Orthogonal vectors should have similarity = 0.0."""
-    a = np.array([1.0, 0.0])
-    b = np.array([0.0, 1.0])
-    sims = cosine_similarity(a, b[np.newaxis, :])
-    assert np.isclose(sims[0], 0.0, atol=1e-5)
-
-
-def test_cosine_distance_matrix_shape():
+def test_euclidean_distance_matrix_shape():
     """Distance matrix should be (n_songs, k)."""
     X = np.random.rand(100, 12).astype(np.float32)
     centroids = np.random.rand(5, 12).astype(np.float32)
-    D = cosine_distance_matrix(X, centroids)
+    D = euclidean_distance_matrix(X, centroids)
     assert D.shape == (100, 5)
 
 
-def test_cosine_distance_nonnegative():
-    """All distances should be in [0, 2] for cosine distance."""
+def test_euclidean_distance_self_zero():
+    """Distance from a point to itself should be 0."""
+    X = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
+    D = euclidean_distance_matrix(X, X)
+    assert np.isclose(D[0, 0], 0.0, atol=1e-5)
+
+
+def test_euclidean_distance_nonnegative():
+    """Squared Euclidean distances are clamped to >= 0 (floating-point safety)."""
     X = np.random.rand(50, 8).astype(np.float32)
     centroids = np.random.rand(4, 8).astype(np.float32)
-    D = cosine_distance_matrix(X, centroids)
-    assert D.min() >= -1e-6
-    assert D.max() <= 2.0 + 1e-6
+    D = euclidean_distance_matrix(X, centroids)
+    assert D.min() >= 0.0
+
+
+def test_euclidean_distance_known_value():
+    """Squared distance between (0, 0) and (3, 4) should be 25 (= 9 + 16)."""
+    X = np.array([[0.0, 0.0]], dtype=np.float32)
+    C = np.array([[3.0, 4.0]], dtype=np.float32)
+    D = euclidean_distance_matrix(X, C)
+    assert np.isclose(D[0, 0], 25.0, atol=1e-4)
 
 
 # ---------------------------------------------------------------------------

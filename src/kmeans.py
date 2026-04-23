@@ -105,8 +105,10 @@ class KMeans:
 
     def fit(self, X: np.ndarray) -> "KMeans":
         """
-        Run k-means on the feature matrix X. 
-        CRITICAL: X must be scaled (StandardScalar) before calling fit.
+        Run k-means on the feature matrix X.
+        X is expected to be min-max normalized to [0, 1] per feature
+        (see preprocess.min_max_normalize), so all dimensions contribute
+        on comparable scales to the squared Euclidean distance.
         """
         rng = np.random.default_rng(self.random_seed)
 

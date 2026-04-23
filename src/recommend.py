@@ -3,6 +3,7 @@ import pandas as pd
 
 from kmeans import KMeans
 from preprocess import apply_feature_weights, AUDIO_FEATURES
+from utils.df_helpers import get_name_col, get_artist_col
 
 
 def get_recommendations(
@@ -56,8 +57,8 @@ def get_recommendations(
     results = results[results["euclidean_distance"] > 1e-10]
 
     # Drop duplicate song/artist pairs (support both column naming conventions)
-    name_col   = "name"    if "name"    in results.columns else "track_name"
-    artist_col = "artists" if "artists" in results.columns else "track_artist"
+    name_col   = get_name_col(results)
+    artist_col = get_artist_col(results)
     subset_cols = [c for c in [name_col, artist_col] if c in results.columns]
     if subset_cols:
         results = results.drop_duplicates(subset=subset_cols)
@@ -74,7 +75,7 @@ def song_to_vector(
     """
     Look up a song by name and return its normalized feature vector and row index.
     """
-    name_col = "name" if "name" in df.columns else "track_name"
+    name_col = get_name_col(df)
     if name_col not in df.columns:
         return None, None
 
@@ -90,7 +91,7 @@ def fuzzy_search(query: str, df: pd.DataFrame, max_results: int = 8) -> list[str
     """
     Return song names that contain the query string (case-insensitive).
     """
-    name_col = "name" if "name" in df.columns else "track_name"
+    name_col = get_name_col(df)
     if name_col not in df.columns:
         return []
 
