@@ -1,3 +1,4 @@
+import time as _time
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +10,6 @@ from models.transformer import TextTransformer
 from utils.music_links import (
     generate_spotify_search_url,
     generate_youtube_music_search_url,
-    generate_youtube_play_url
 )
 
 
@@ -69,37 +69,72 @@ def vibe_assets_exist():
     return PARQUET_PATH.exists() and VECTORS_PATH.exists() and TEXT_MODEL_PATH.exists()
 
 
+def _render_rec_card(name, artist, seed, sp_url, yt_url, border_gold=False, badge=None):
+    """Render one recommendation card matching the Find-Similar-Songs layout."""
+    border = "2px solid #FFD700" if border_gold else "1px solid rgba(255,255,255,0.12)"
+    badge_html = (
+        f"<div style='position:absolute;top:6px;left:6px;z-index:2;"
+        f"background:#FFD700;color:#000;font-size:0.62rem;font-weight:700;"
+        f"padding:2px 6px;border-radius:4px;'>{badge}</div>"
+        if badge else ""
+    )
+    st.markdown(
+        f"<div style='border:{border};border-radius:10px;"
+        f"overflow:hidden;background:#1a1a1a;margin-bottom:4px;position:relative;'>"
+        f"{badge_html}"
+        f"<img src='https://picsum.photos/seed/{seed}/200/200'"
+        f" style='width:100%;display:block;'>"
+        f"<div style='padding:7px 9px 8px;'>"
+        f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;"
+        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'"
+        f" title='{name}'>{name}</p>"
+        f"<p style='font-size:0.68rem;color:#999;margin:0 0 6px;"
+        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
+        f"{artist}</p>"
+        f"<div style='display:flex;gap:6px;'>"
+        f"<a href='{sp_url}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/1/19/Spotify_logo_without_text.svg' width='14' style='opacity:.75'></a>"
+        f"<a href='{yt_url}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/6/6a/Youtube_Music_icon.svg' width='14' style='opacity:.75'></a>"
+        f"</div></div></div>",
+        unsafe_allow_html=True
+    )
+
+
 def render_vibe_extension(top_n=10):
-    st.subheader("Describe the vibe you want")
-    st.caption("Experimental extension: semantic text search + slider-based reranking.")
+    st.subheader("📝 Describe the vibe you want")
+    st.caption("Type a phrase that captures the mood — semantic text search + slider reranking finds matching songs.")
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        slider_energy = st.slider("Vibe Energy", -1.0, 1.0, 0.0, step=0.01, key="vibe_energy")
-        slider_dance = st.slider("Danceability", -1.0, 1.0, 0.0, step=0.01, key="vibe_dance")
-    with col2:
-        slider_mood = st.slider("Mood (Valence)", -1.0, 1.0, 0.0, step=0.01, key="vibe_mood")
-        slider_acoustic = st.slider("Acoustic Feel", -1.0, 1.0, 0.0, step=0.01, key="vibe_acoustic")
-    with col3:
-        slider_speech = st.slider("Vocal Focus (Speechiness)", -1.0, 1.0, 0.0, step=0.01, key="vibe_speech")
-        slider_tempo = st.slider("Intensity (Tempo)", -1.0, 1.0, 0.0, step=0.01, key="vibe_tempo")
-
+    # ── Query input ──────────────────────────────────────────────────────────
     query = st.text_input(
         "Describe the vibe you want:",
         placeholder="e.g. Late night driving...",
-        key="vibe_query"
+        key="vibe_query",
     )
+
+    # ── Slider expander (reranking knobs) ────────────────────────────────────
+    with st.expander("🎛️ Reranking knobs (optional — push results toward specific audio traits)", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            slider_energy = st.slider("Vibe Energy", -1.0, 1.0, 0.0, step=0.01, key="vibe_energy")
+            slider_dance = st.slider("Danceability", -1.0, 1.0, 0.0, step=0.01, key="vibe_dance")
+        with col2:
+            slider_mood = st.slider("Mood (Valence)", -1.0, 1.0, 0.0, step=0.01, key="vibe_mood")
+            slider_acoustic = st.slider("Acoustic Feel", -1.0, 1.0, 0.0, step=0.01, key="vibe_acoustic")
+        with col3:
+            slider_speech = st.slider("Vocal Focus (Speechiness)", -1.0, 1.0, 0.0, step=0.01, key="vibe_speech")
+            slider_tempo = st.slider("Intensity (Tempo)", -1.0, 1.0, 0.0, step=0.01, key="vibe_tempo")
 
     if not query:
         st.info("Enter a sentence above to search by mood, vibe, or listening context.")
         return
 
     if not vibe_assets_exist():
+        missing = []
+        if not PARQUET_PATH.exists():    missing.append(str(PARQUET_PATH))
+        if not VECTORS_PATH.exists():    missing.append(str(VECTORS_PATH))
+        if not TEXT_MODEL_PATH.exists(): missing.append(str(TEXT_MODEL_PATH))
         st.warning(
             "The transformer extension is missing one or more required files:\n\n"
-            f"- {PARQUET_PATH}\n"
-            f"- {VECTORS_PATH}\n"
-            f"- {TEXT_MODEL_PATH}"
+            + "\n".join(f"- {m}" for m in missing)
         )
         return
 
@@ -118,6 +153,7 @@ def render_vibe_extension(top_n=10):
         )
         return
 
+    # ── Encode query + score candidates ──────────────────────────────────────
     with st.spinner("Searching for the perfect vibe..."):
         tokens = tokenizer.encode(query)
         token_tensor = torch.tensor([tokens], dtype=torch.long).to(device)
@@ -142,52 +178,75 @@ def render_vibe_extension(top_n=10):
             ["energy", "danceability", "valence", "acousticness", "speechiness", "tempo"]
         ].values
 
-        weights = np.array([
-            slider_energy,
-            slider_dance,
-            slider_mood,
-            slider_acoustic,
-            slider_speech,
-            slider_tempo,
+        slider_weights = np.array([
+            slider_energy, slider_dance, slider_mood,
+            slider_acoustic, slider_speech, slider_tempo,
         ])
 
         shifted_features = feat_arr - 0.5
-        slider_contributions = np.sum(shifted_features * weights, axis=1)
+        slider_contributions = np.sum(shifted_features * slider_weights, axis=1)
 
         candidate_df["final_score"] = (0.7 * candidate_df["cosine_sim"]) + (0.05 * slider_contributions)
 
-        top_results = candidate_df.sort_values(by="final_score", ascending=False).head(top_n)
-
-        # Clean artist names to remove unwanted chars like brackets and quotes
+        top_results = candidate_df.sort_values(by="final_score", ascending=False).head(top_n).reset_index(drop=True)
         top_results["clean_artists"] = top_results["artists"].astype(str).str.replace(r"\[|\]|'", "", regex=True)
 
-    st.markdown(f"### Results for *'{query}'*")
-    for _, row in top_results.iterrows():
-        yt_link = generate_youtube_music_search_url(row["name"], row["clean_artists"])
-        sp_link = generate_spotify_search_url(row["name"], row["clean_artists"])
-        
-        st.markdown(
-            f"**{row['name']}** by *{row['clean_artists']}* "
-            f"(Album: {row['album']}) — Score: `{row['final_score']:.3f}` "
-            f"(Semantic sim: `{row['cosine_sim']:.3f}`)<br><br>"
-            f"<a href='{yt_link}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/6/6a/Youtube_Music_icon.svg' width='16' style='vertical-align: middle; margin-right:3px;'></a> "
-            f"<a href='{yt_link}' target='_blank' style='text-decoration:none; vertical-align: middle;'>YouTube Music</a> &nbsp; | &nbsp; "
-            f"<a href='{sp_link}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/1/19/Spotify_logo_without_text.svg' width='16' style='vertical-align: middle; margin-right:3px;'></a> "
-            f"<a href='{sp_link}' target='_blank' style='text-decoration:none; vertical-align: middle;'>Spotify</a>",
-            unsafe_allow_html=True
-        )
-        if st.button("▶ Listen", key=f"vibe_play_{row['id']}"):
-            st.session_state["now_playing"] = {"name": row['name'], "artist": row['clean_artists']}
-            st.rerun()
+    st.subheader(f"Top {top_n} matching songs for *'{query}'*")
 
-        cols = st.columns(5)
-        cols[0].metric("Energy", f"{row['energy']:.2f}")
-        cols[1].metric("Dance", f"{row['danceability']:.2f}")
-        cols[2].metric("Valence", f"{row['valence']:.2f}")
-        cols[3].metric("Acoustic", f"{row['acousticness']:.2f}")
-        cols[4].metric("Tempo", f"{row['tempo']:.2f}")
-        st.divider()
+    # ── Optional advanced toggle (show raw scores) ──────────────────────────
+    show_scores = st.checkbox(
+        "🔍 Show score breakdown (semantic sim + final score)",
+        value=False, key="vibe_show_scores",
+    )
 
-    # Note: the sticky player is defined inside `src/app.py` directly using the `st.session_state["now_playing"]` condition.
-    # Therefore, we do not need to re-render the HTML here as long as `app.py` renders it.
-    # However, since `render_vibe_extension` is contained inside a tab, we should just let the user use the `now_playing` state.
+    # ── 5-column card grid ──────────────────────────────────────────────────
+    st.write("")
+    COLS = 5
+    rec_list = [
+        {"name": str(row["name"]), "artist": str(row["clean_artists"])}
+        for _, row in top_results.iterrows()
+    ]
+
+    for _row_start in range(0, len(top_results), COLS):
+        _row_recs = top_results.iloc[_row_start:_row_start + COLS]
+        _cols = st.columns(COLS)
+        for _ci in range(len(_row_recs)):
+            _pos = _row_start + _ci
+            _row = top_results.iloc[_pos]
+            _seed = str(_row.get("id", _pos))
+            _name = str(_row["name"])
+            _artist = str(_row["clean_artists"])
+            _sp_url = generate_spotify_search_url(_name, _artist)
+            _yt_url = generate_youtube_music_search_url(_name, _artist)
+            with _cols[_ci]:
+                _render_rec_card(
+                    name=_name, artist=_artist, seed=_seed,
+                    sp_url=_sp_url, yt_url=_yt_url,
+                )
+
+                if show_scores:
+                    _fs = float(_row["final_score"])
+                    _cs = float(_row["cosine_sim"])
+                    st.markdown(
+                        f"<div style='background:rgba(29,185,84,0.12);"
+                        f"border:1px solid rgba(29,185,84,0.35);"
+                        f"border-radius:6px;padding:4px 8px;margin:4px 0;"
+                        f"font-size:0.7rem;color:#ccc;'>"
+                        f"score <b style='color:#1DB954'>{_fs:.3f}</b> · "
+                        f"sim <b style='color:#1DB954'>{_cs:.3f}</b>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+
+                if st.button("▶ Listen", key=f"vibe_listen_{_seed}_{_pos}",
+                             use_container_width=True):
+                    st.session_state["now_playing"] = {
+                        "name":   _name,
+                        "artist": _artist,
+                        "ts":     _time.time(),
+                    }
+                    st.session_state["now_playing_idx"] = _pos
+                    st.session_state["rec_list"] = rec_list
+                    for _k in ("_track_data", "_track_data_key"):
+                        st.session_state.pop(_k, None)
+                    st.rerun()
