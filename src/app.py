@@ -318,31 +318,67 @@ with tab1:
             cluster_id = int(model.predict(query_w)[0])
             mood       = mood_map[cluster_id]
 
-            # ── Cluster stat cards ────────────────────────────────────────────
-            col1, col2, col3 = st.columns(3)
-            with col1:
+            # ── Your pick: song card (left, 1/5) + features (right, 4/5) ─────
+            from utils.music_links import (generate_spotify_search_url as _gen_sp,
+                                           generate_youtube_music_search_url as _gen_yt)
+
+            cluster_size = int((model.labels_ == cluster_id).sum())
+            year         = df_tab1.iloc[query_idx].get("year", "—") if query_idx is not None else "—"
+            _q_seed      = str(df_tab1.iloc[query_idx].get("id", query_idx)) if query_idx is not None else "query"
+            _q_name      = str(query_name).strip()
+            _q_artist    = str(df_tab1.iloc[query_idx].get(artist_col, "")).replace("[", "").replace("]", "").replace("'", "").strip() if query_idx is not None else ""
+            _q_sp_url    = _gen_sp(_q_name, _q_artist)
+            _q_yt_url    = _gen_yt(_q_name, _q_artist)
+
+            st.subheader("🎯 Your pick")
+            pick_left, pick_right = st.columns([1, 4])
+
+            with pick_left:
                 st.markdown(
-                    f"<p style='font-size:0.85rem;color:#888;margin-bottom:0;'>Mood Cluster</p>"
-                    f"<p style='font-size:1.2rem;font-weight:600;margin-top:0;'>{mood}</p>",
-                    unsafe_allow_html=True
-                )
-            with col2:
-                cluster_size = int((model.labels_ == cluster_id).sum())
-                st.markdown(
-                    f"<p style='font-size:0.85rem;color:#888;margin-bottom:0;'>Songs in this cluster</p>"
-                    f"<p style='font-size:1.2rem;font-weight:600;margin-top:0;'>{cluster_size:,}</p>",
-                    unsafe_allow_html=True
-                )
-            with col3:
-                year = df_tab1.iloc[query_idx].get("year", "—") if query_idx is not None else "—"
-                st.markdown(
-                    f"<p style='font-size:0.85rem;color:#888;margin-bottom:0;'>Release Year</p>"
-                    f"<p style='font-size:1.2rem;font-weight:600;margin-top:0;'>{year}</p>",
+                    f"<div style='border:2px solid #FFD700;border-radius:10px;"
+                    f"overflow:hidden;background:#1a1a1a;margin-bottom:4px;position:relative;'>"
+                    f"<div style='position:absolute;top:6px;left:6px;z-index:2;"
+                    f"background:#FFD700;color:#000;font-size:0.62rem;font-weight:700;"
+                    f"padding:2px 6px;border-radius:4px;'>YOUR SONG</div>"
+                    f"<img src='https://picsum.photos/seed/{_q_seed}/200/200'"
+                    f" style='width:100%;display:block;'>"
+                    f"<div style='padding:7px 9px 8px;'>"
+                    f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;"
+                    f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'"
+                    f" title='{_q_name}'>{_q_name}</p>"
+                    f"<p style='font-size:0.68rem;color:#999;margin:0 0 6px;"
+                    f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
+                    f"{_q_artist}</p>"
+                    f"<div style='display:flex;gap:6px;'>"
+                    f"<a href='{_q_sp_url}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/1/19/Spotify_logo_without_text.svg' width='14' style='opacity:.75'></a>"
+                    f"<a href='{_q_yt_url}' target='_blank'><img src='https://upload.wikimedia.org/wikipedia/commons/6/6a/Youtube_Music_icon.svg' width='14' style='opacity:.75'></a>"
+                    f"</div></div></div>",
                     unsafe_allow_html=True
                 )
 
-            # ── Audio profile expander ────────────────────────────────────────
-            with st.expander("🔬 Audio profile of this song vs. cluster average"):
+            with pick_right:
+                # Top-row stat cards
+                sc1, sc2, sc3 = st.columns(3)
+                with sc1:
+                    st.markdown(
+                        f"<p style='font-size:0.85rem;color:#888;margin-bottom:0;'>Mood Cluster</p>"
+                        f"<p style='font-size:1.2rem;font-weight:600;margin-top:0;'>{mood}</p>",
+                        unsafe_allow_html=True
+                    )
+                with sc2:
+                    st.markdown(
+                        f"<p style='font-size:0.85rem;color:#888;margin-bottom:0;'>Songs in this cluster</p>"
+                        f"<p style='font-size:1.2rem;font-weight:600;margin-top:0;'>{cluster_size:,}</p>",
+                        unsafe_allow_html=True
+                    )
+                with sc3:
+                    st.markdown(
+                        f"<p style='font-size:0.85rem;color:#888;margin-bottom:0;'>Release Year</p>"
+                        f"<p style='font-size:1.2rem;font-weight:600;margin-top:0;'>{year}</p>",
+                        unsafe_allow_html=True
+                    )
+
+                # Audio profile bar chart (song vs cluster average)
                 song_feats     = X_norm[query_idx] if query_idx is not None else query_vec
                 centroid_feats = model.centroids[cluster_id]
                 feat_df = pd.DataFrame({
@@ -353,9 +389,17 @@ with tab1:
                 fig_bar = px.bar(
                     feat_df.melt(id_vars="Feature", var_name="Source", value_name="Value"),
                     x="Feature", y="Value", color="Source", barmode="group",
-                    title="Song vs. Cluster Audio Profile", height=350,
+                    title="Song vs. Cluster Audio Profile", height=280,
+                    color_discrete_map={"This Song": "#FFD700", "Cluster Average": "#1DB954"},
                 )
-                fig_bar.update_layout(xaxis_tickangle=-30)
+                fig_bar.update_layout(
+                    xaxis_tickangle=-30,
+                    margin=dict(l=30, r=10, t=40, b=60),
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                xanchor="right", x=1),
+                )
                 st.plotly_chart(fig_bar, use_container_width=True)
 
             st.divider()
