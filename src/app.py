@@ -25,6 +25,9 @@ from reduce import pca_reduce
 from mood_labels import label_all_clusters
 from vibe_extension import render_vibe_extension
 from utils.thumbnails import get_video_id, get_video_ids_batch, thumb_url
+from utils.music_links import (generate_spotify_search_url,
+                               generate_youtube_music_search_url,
+                               generate_youtube_play_url)
 
 # ---------------------------------------------------------------------------
 # Page setup
@@ -101,6 +104,47 @@ st.markdown("""
   }
   [data-testid="stExpander"] > details > summary:hover {
     background: rgba(29, 185, 84, 0.14) !important;
+  }
+
+  /* Step 2 selectbox — green pulse to draw attention to the picker */
+  @keyframes matchPulse {
+    0%   { box-shadow: 0 0 0 0    rgba(29, 185, 84, 0.55); }
+    70%  { box-shadow: 0 0 0 10px rgba(29, 185, 84, 0.00); }
+    100% { box-shadow: 0 0 0 0    rgba(29, 185, 84, 0.00); }
+  }
+  /* The .match-picker marker flags the next selectbox as the match picker */
+  .match-picker + div [data-baseweb="select"] > div,
+  .match-picker ~ div [data-baseweb="select"] > div {
+    border: 2px solid #1DB954 !important;
+    border-radius: 8px !important;
+    animation: matchPulse 1.6s ease-out infinite;
+  }
+  /* Step 2 label — gradient pill + bouncing arrow, matches Spotify theme */
+  @keyframes arrowBounce {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(4px); }
+  }
+  .match-picker + div label,
+  .match-picker ~ div label {
+    display: inline-block !important;
+    font-size: 1.02rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.3px !important;
+    padding: 6px 14px !important;
+    margin-bottom: 6px !important;
+    border-radius: 999px !important;
+    color: #FFFFFF !important;
+    background: linear-gradient(92deg,
+      #0F7A38 0%, #1DB954 50%, #1ED760 100%) !important;
+    box-shadow: 0 2px 12px rgba(29, 185, 84, 0.45),
+                inset 0 -2px 0 rgba(0, 0, 0, 0.12) !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35),
+                 0 0 6px rgba(255, 255, 255, 0.25) !important;
+  }
+  /* Gentle vertical bounce on the whole pill so the ↓ arrow reads as "look below" */
+  .match-picker + div label,
+  .match-picker ~ div label {
+    animation: arrowBounce 1.4s ease-in-out infinite;
   }
 </style>
 
@@ -297,13 +341,13 @@ with tab1:
     _scol1, _scol2 = st.columns(2)
     with _scol1:
         search_input = st.text_input(
-            "Song name:",
+            "Step 1.  Type a song name",
             placeholder="e.g. Bohemian Rhapsody",
             key="song_search_input",
         )
     with _scol2:
         artist_input = st.text_input(
-            "Artist name: (optional — narrows results)",
+            "Artist name  (optional — narrows results)",
             placeholder="e.g. Queen",
             key="artist_search_input",
         )
@@ -337,9 +381,14 @@ with tab1:
             query_name, query_artist_filter = options[0]
         else:
             # Multiple matches — let user pick from a clean selectbox
+            # Wrap in a flagged div so the green pulse CSS can target it.
+            st.markdown(
+                "<div class='match-picker'></div>",
+                unsafe_allow_html=True,
+            )
             labels = [f"{n} — {a}" for n, a in options]
             chosen_label = st.selectbox(
-                f"{len(options)} matches — select one:",
+                f"Step 2.  ↓  Pick the exact track  ({len(options)} found)",
                 labels,
                 key="song_select",
             )
@@ -421,7 +470,7 @@ with tab1:
                     f"<img src='{_q_img}'"
                     f" style='width:100%;aspect-ratio:1/1;object-fit:cover;display:block;'>"
                     f"<div style='padding:7px 9px 8px;'>"
-                    f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;"
+                    f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;color:#FFFFFF;"
                     f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'"
                     f" title='{_q_name}'>{_q_name}</p>"
                     f"<p style='font-size:0.68rem;color:#999;margin:0 0 6px;"
@@ -543,7 +592,7 @@ with tab1:
                                 f"<img src='{_rimg}'"
                                 f" style='width:100%;aspect-ratio:1/1;object-fit:cover;display:block;'>"
                                 f"<div style='padding:7px 9px 8px;'>"
-                                f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;"
+                                f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;color:#FFFFFF;"
                                 f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'"
                                 f" title='{_rname}'>{_rname}</p>"
                                 f"<p style='font-size:0.68rem;color:#999;margin:0 0 6px;"
@@ -854,326 +903,6 @@ with tab1:
             except Exception as e:
                 st.error(f"Error generating recommendations: {e}")
 
-            # ── Player injection — OUTSIDE the try/except, full-width ─────────
-            # This block runs whenever now_playing is set (regardless of show_advanced).
-            if "now_playing" in st.session_state:
-                playing     = st.session_state["now_playing"]
-                current_idx = st.session_state.get("now_playing_idx", 0)
-                rec_list    = st.session_state.get("rec_list", [
-                    {"name": playing["name"], "artist": playing["artist"]}
-                ])
-
-                rec_cache_key = "|".join(f"{t['name']}::{t['artist']}" for t in rec_list)
-
-                if st.session_state.get("_track_data_key") != rec_cache_key:
-                    with st.spinner("Fetching audio links..."):
-                        def _fetch_one(args):
-                            t_idx, track = args
-                            try:
-                                url = generate_youtube_play_url(track["name"], track["artist"])
-                                vid = url.split("v=")[1].split("&")[0] if url and "v=" in url else ""
-                            except Exception:
-                                vid = ""
-                            try:
-                                seed_val = recs.iloc[t_idx].get("id", str(t_idx)) if t_idx < len(recs) else str(t_idx)
-                                sp_url   = recs.iloc[t_idx]["Spotify"]       if t_idx < len(recs) else ""
-                                yt_url   = recs.iloc[t_idx]["YouTube Music"] if t_idx < len(recs) else ""
-                            except Exception:
-                                seed_val, sp_url, yt_url = str(t_idx), "", ""
-                            return t_idx, {
-                                "name":     track["name"],
-                                "artist":   track["artist"],
-                                "video_id": vid,
-                                "seed":     str(seed_val),
-                                "spotify":  sp_url,
-                                "ytmusic":  yt_url,
-                            }
-
-                        results = [None] * len(rec_list)
-                        with ThreadPoolExecutor(max_workers=min(len(rec_list), 10)) as executor:
-                            for t_idx, entry in executor.map(_fetch_one, enumerate(rec_list)):
-                                results[t_idx] = entry
-                        st.session_state["_track_data"]     = results
-                        st.session_state["_track_data_key"] = rec_cache_key
-
-                track_data    = st.session_state["_track_data"]
-                current_track = track_data[current_idx] if track_data else None
-
-                if not current_track or not current_track["video_id"]:
-                    st.warning(
-                        f"⚠️ Could not fetch a playable clip for "
-                        f"**{current_track['name'] if current_track else 'this track'}** "
-                        f"(YouTube may have blocked the request). "
-                        "Recommendations above are still available — use the Spotify / YouTube Music icons to open links directly."
-                    )
-                    if st.button("✕ Dismiss & return to full view", key="dismiss_player"):
-                        for _k in ["now_playing", "now_playing_idx", "rec_list",
-                                   "_track_data", "_track_data_key"]:
-                            st.session_state.pop(_k, None)
-                        components.html("""<script>
-(function(){
-  var p;try{p=window.parent.document;}catch(e){return;}
-  ['yt-playlist-panel','yt-fixed-player','yt-pl-style','yt-fixed-style'].forEach(function(id){
-    var el=p.getElementById(id); if(el) el.remove();
-  });
-  var mc=p.querySelector('[data-testid="stMainBlockContainer"]')||p.querySelector('.main .block-container');
-  if(mc){mc.style.removeProperty('padding-right');mc.style.removeProperty('padding-bottom');}
-})();
-</script>""", height=0, scrolling=False)
-                        st.rerun()
-                else:
-                    tracks_json = _json.dumps(track_data)
-                    components.html(f"""<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="https://www.youtube.com/iframe_api"></script>
-</head>
-<body style="margin:0;background:transparent;">
-<div id="yt-hidden" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;"></div>
-<script>
-(function() {{
-  var TRACKS = {tracks_json};
-  var currentIdx = {current_idx};
-  var ytPlayer, ytPlaying = true, ytMuted = false, ytDragging = false;
-
-  function esc(s) {{
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }}
-
-  var par;
-  try {{ par = window.parent.document; }} catch(e) {{ par = null; }}
-
-  // Helper: find Streamlit's main block container (selector differs by version)
-  function _mc() {{
-    return par && (
-      par.querySelector('[data-testid="stMainBlockContainer"]') ||
-      par.querySelector('.main .block-container')
-    );
-  }}
-
-  // Push main content left so it never slides under the 260px fixed right panel.
-  // 260px panel + 16px right margin + 19px safety = 295px. Reset on <960px (panel hidden).
-  function _applyContentPadding() {{
-    var el = _mc(); if (!el) return;
-    var narrow = window.parent.innerWidth < 960;
-    el.style.setProperty('padding-right', narrow ? '' : '295px', 'important');
-    el.style.setProperty('padding-bottom', '110px', 'important');
-    el.style.setProperty('max-width', '100%', 'important');
-    el.style.setProperty('box-sizing', 'border-box', 'important');
-  }}
-  function _resetContentPadding() {{
-    var el = _mc(); if (!el) return;
-    el.style.removeProperty('padding-right');
-    el.style.removeProperty('padding-bottom');
-  }}
-
-  if (par) {{
-    _applyContentPadding();
-    window.parent.addEventListener('resize', _applyContentPadding);
-
-    var eps = par.getElementById('yt-pl-style'); if (eps) eps.remove();
-    var plStyle = par.createElement('style');
-    plStyle.id = 'yt-pl-style';
-    plStyle.textContent = `
-      #yt-playlist-panel {{
-        position:fixed; top:60px; right:16px; width:260px; bottom:96px;
-        background:#181818; border-radius:10px; z-index:99998;
-        display:flex; flex-direction:column; overflow:hidden;
-        box-shadow:0 4px 24px rgba(0,0,0,0.5);
-        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-      }}
-      @media (max-width: 900px) {{ #yt-playlist-panel {{ display: none !important; }} }}
-      #yt-playlist-panel .pl-header {{
-        padding:10px 14px 6px; font-size:0.78rem; font-weight:700; color:#b3b3b3;
-        letter-spacing:0.05em; text-transform:uppercase; flex-shrink:0; border-bottom:1px solid #282828;
-      }}
-      #yt-playlist-panel .pl-scroll {{
-        flex:1; overflow-y:auto; scrollbar-width:thin; scrollbar-color:#535353 transparent; padding:4px 0;
-      }}
-      #yt-playlist-panel .pl-scroll::-webkit-scrollbar {{ width:4px; }}
-      #yt-playlist-panel .pl-scroll::-webkit-scrollbar-thumb {{ background:#535353; border-radius:2px; }}
-      #yt-playlist-panel .pl-row {{
-        display:flex; align-items:center; gap:9px; padding:6px 12px;
-        cursor:pointer; transition:background 0.15s; min-width:0; border-left:3px solid transparent;
-      }}
-      #yt-playlist-panel .pl-row:hover {{ background:#282828; }}
-      #yt-playlist-panel .pl-row.active {{ background:#242424; border-left-color:#1DB954; }}
-      #yt-playlist-panel .pl-thumb {{ width:42px; height:42px; border-radius:4px; object-fit:cover; flex-shrink:0; }}
-      #yt-playlist-panel .pl-info {{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }}
-      #yt-playlist-panel .pl-title {{
-        font-size:0.78rem; font-weight:600; color:#fff;
-        white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-      }}
-      #yt-playlist-panel .pl-row.active .pl-title {{ color:#1DB954; }}
-      #yt-playlist-panel .pl-artist {{
-        font-size:0.68rem; color:#b3b3b3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-      }}
-      #yt-playlist-panel .pl-links {{ display:flex; gap:5px; margin-top:3px; align-items:center; }}
-      #yt-playlist-panel .pl-links a {{ line-height:0; opacity:0.65; transition:opacity 0.15s; }}
-      #yt-playlist-panel .pl-links a:hover {{ opacity:1; }}
-    `;
-    par.head.appendChild(plStyle);
-
-    var epp = par.getElementById('yt-playlist-panel'); if (epp) epp.remove();
-    var panel = par.createElement('div');
-    panel.id = 'yt-playlist-panel';
-    panel.innerHTML = '<div class="pl-header">Up Next</div><div class="pl-scroll" id="pl-scroll"></div>';
-    par.body.appendChild(panel);
-
-    var scroll = par.getElementById('pl-scroll');
-    TRACKS.forEach(function(t, i) {{
-      var row = par.createElement('div');
-      row.className = 'pl-row' + (i === currentIdx ? ' active' : '');
-      row.dataset.idx = i;
-      row.innerHTML =
-        '<img class="pl-thumb" src="' + (t.video_id ? ('https://img.youtube.com/vi/' + t.video_id + '/mqdefault.jpg') : ('https://picsum.photos/seed/' + esc(t.seed) + '/80/80')) + '" alt="">' +
-        '<div class="pl-info">' +
-          '<div class="pl-title" title="' + esc(t.name) + '">' + esc(t.name) + '</div>' +
-          '<div class="pl-artist">' + esc(t.artist) + '</div>' +
-          '<div class="pl-links">' +
-            '<a href="' + esc(t.spotify) + '" target="_blank" onclick="event.stopPropagation()">' +
-              '<img src="https://upload.wikimedia.org/wikipedia/commons/1/19/Spotify_logo_without_text.svg" width="14" height="14"></a>' +
-            '<a href="' + esc(t.ytmusic) + '" target="_blank" onclick="event.stopPropagation()">' +
-              '<img src="https://upload.wikimedia.org/wikipedia/commons/6/6a/Youtube_Music_icon.svg" width="14" height="14"></a>' +
-          '</div>' +
-        '</div>';
-      row.addEventListener('click', function() {{ loadTrack(i); }});
-      scroll.appendChild(row);
-    }});
-    var activeRow = scroll.querySelector('.pl-row.active');
-    if (activeRow) activeRow.scrollIntoView({{block:'nearest'}});
-  }}
-
-  if (par) {{
-    var es = par.getElementById('yt-fixed-style'); if (es) es.remove();
-    var styleEl = par.createElement('style');
-    styleEl.id = 'yt-fixed-style';
-    styleEl.textContent = [
-      '#yt-fixed-player {{ position:fixed; bottom:0; left:0; right:0; height:80px; background:#181818; border-top:1px solid #282828; display:flex; align-items:center; padding:0 clamp(12px,2vw,28px); z-index:999999; box-sizing:border-box; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }}',
-      '#yt-fixed-player * {{ box-sizing:border-box; }}',
-      '#yt-fixed-player .np-left {{ display:flex; align-items:center; gap:10px; flex:0 0 200px; min-width:0; overflow:hidden; }}',
-      '#yt-fixed-player .np-thumb {{ width:44px;height:44px;border-radius:5px;object-fit:cover;flex-shrink:0;background:#333; }}',
-      '#yt-fixed-player .np-info {{ display:flex;flex-direction:column;justify-content:center;min-width:0;overflow:hidden; }}',
-      '#yt-fixed-player .np-title {{ font-weight:700;font-size:clamp(.7rem,.85vw,.9rem);color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0; }}',
-      '#yt-fixed-player .np-artist {{ font-size:clamp(.6rem,.7vw,.78rem);color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0; }}',
-      '#yt-fixed-player .np-center {{ display:flex;flex-direction:column;align-items:center;gap:4px;position:absolute;left:50%;transform:translateX(-50%);width:clamp(280px,40vw,560px); }}',
-      '#yt-fixed-player .np-controls {{ display:flex;align-items:center;gap:clamp(4px,0.8vw,10px); }}',
-      '#yt-fixed-player .np-btn {{ background:none;border:none;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;padding:6px;transition:background .15s;flex-shrink:0; }}',
-      '#yt-fixed-player .np-btn:hover {{ background:rgba(255,255,255,.15); }}',
-      '#yt-fixed-player .np-btn-play {{ background:#1DB954;width:36px;height:36px; }}',
-      '#yt-fixed-player .np-btn-play:hover {{ background:#1ed760;transform:scale(1.06); }}',
-      '#yt-fixed-player .np-progress {{ display:flex;align-items:center;gap:8px;width:100%; }}',
-      '#yt-fixed-player .np-time {{ font-size:.68rem;color:#b3b3b3;min-width:36px;text-align:center;flex-shrink:0; }}',
-      '#yt-fixed-player .np-bar-wrap {{ flex:1;height:4px;background:#535353;border-radius:2px;position:relative;cursor:pointer;transition:height .12s;min-width:0; }}',
-      '#yt-fixed-player .np-bar-wrap:hover {{ height:7px; }}',
-      '#yt-fixed-player .np-bar-fill {{ height:100%;width:0%;background:#1DB954;border-radius:2px;pointer-events:none; }}',
-      '#yt-fixed-player .np-bar-wrap:hover .np-bar-fill {{ background:#1ed760; }}',
-      '#yt-fixed-player .np-bar-thumb {{ position:absolute;top:50%;right:-5px;width:11px;height:11px;background:#fff;border-radius:50%;transform:translateY(-50%);opacity:0;transition:opacity .15s;pointer-events:none; }}',
-      '#yt-fixed-player .np-bar-wrap:hover .np-bar-thumb {{ opacity:1; }}',
-      '#yt-fixed-player .np-btn-skip {{ opacity:0.7; }}',
-      '#yt-fixed-player .np-btn-skip:hover:not(:disabled) {{ opacity:1;background:rgba(255,255,255,.15); }}',
-      '#yt-fixed-player .np-btn-skip:disabled {{ opacity:0.25;cursor:default; }}',
-      '@media (max-width: 640px) {{ #yt-fixed-player .np-left {{ flex: 0 0 auto; }} #yt-fixed-player .np-center {{ width: calc(100vw - 120px); }} }}',
-    ].join('\\n');
-    par.head.appendChild(styleEl);
-
-    var ep = par.getElementById('yt-fixed-player'); if (ep) ep.remove();
-    var pdiv = par.createElement('div');
-    pdiv.id = 'yt-fixed-player';
-    var t0 = TRACKS[currentIdx];
-    pdiv.innerHTML =
-      '<div class="np-left">' +
-        '<img class="np-thumb" id="np-thumb" src="https://img.youtube.com/vi/' + t0.video_id + '/mqdefault.jpg" alt="">' +
-        '<div class="np-info"><p class="np-title" id="np-title">' + esc(t0.name) + '</p><p class="np-artist" id="np-artist">' + esc(t0.artist) + '</p></div>' +
-      '</div>' +
-      '<div class="np-center">' +
-        '<div class="np-controls">' +
-          '<button class="np-btn np-btn-skip" id="np-btn-prev"' + (currentIdx===0?' disabled':'') + '><svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="19,5 9,12 19,19"/><rect x="5" y="5" width="3" height="14" rx="1"/></svg></button>' +
-          '<button class="np-btn np-btn-play" id="np-btn-play"><svg id="np-icon-pause" width="16" height="16" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg><svg id="np-icon-play" width="16" height="16" viewBox="0 0 24 24" fill="white" style="display:none"><polygon points="5,3 20,12 5,21"/></svg></button>' +
-          '<button class="np-btn np-btn-skip" id="np-btn-next"' + (currentIdx===TRACKS.length-1?' disabled':'') + '><svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="5,5 15,12 5,19"/><rect x="16" y="5" width="3" height="14" rx="1"/></svg></button>' +
-          '<button class="np-btn" id="np-btn-mute"><svg id="np-icon-sound" width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke="white" stroke-width="2" fill="none"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke="white" stroke-width="2" fill="none"/></svg><svg id="np-icon-mute" width="16" height="16" viewBox="0 0 24 24" fill="white" style="display:none"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><line x1="23" y1="9" x2="17" y2="15" stroke="white" stroke-width="2.2" stroke-linecap="round"/><line x1="17" y1="9" x2="23" y2="15" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg></button>' +
-        '</div>' +
-        '<div class="np-progress"><span class="np-time" id="np-cur">0:00</span><div class="np-bar-wrap" id="np-bar"><div class="np-bar-fill" id="np-fill"><div class="np-bar-thumb"></div></div></div><span class="np-time" id="np-dur">0:00</span></div>' +
-      '</div>';
-    par.body.appendChild(pdiv);
-
-    function fmt(s) {{ s=Math.floor(s||0); return Math.floor(s/60)+':'+((s%60)<10?'0':'')+s%60; }}
-    function tick() {{
-      if (!ytPlayer||!ytPlayer.getCurrentTime||ytDragging) return;
-      var cur=ytPlayer.getCurrentTime(), dur=ytPlayer.getDuration();
-      if (!dur) return;
-      par.getElementById('np-fill').style.width=(cur/dur*100)+'%';
-      par.getElementById('np-cur').textContent=fmt(cur);
-      par.getElementById('np-dur').textContent=fmt(dur);
-    }}
-    function seekAt(e) {{
-      if (!ytPlayer||!ytPlayer.getDuration) return;
-      var bar=par.getElementById('np-bar'), r=bar.getBoundingClientRect();
-      var pct=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
-      ytPlayer.seekTo(pct*ytPlayer.getDuration(),true);
-      par.getElementById('np-fill').style.width=(pct*100)+'%';
-    }}
-    par.getElementById('np-bar').addEventListener('mousedown',function(e){{ytDragging=true;seekAt(e);}});
-    par.addEventListener('mousemove',function(e){{if(ytDragging)seekAt(e);}});
-    par.addEventListener('mouseup',function(){{ytDragging=false;}});
-    par.getElementById('np-btn-play').addEventListener('click',function(){{
-      if(!ytPlayer) return;
-      if(ytPlaying){{ytPlayer.pauseVideo();par.getElementById('np-icon-pause').style.display='none';par.getElementById('np-icon-play').style.display='block';}}
-      else{{ytPlayer.playVideo();par.getElementById('np-icon-pause').style.display='block';par.getElementById('np-icon-play').style.display='none';}}
-      ytPlaying=!ytPlaying;
-    }});
-    par.getElementById('np-btn-prev').addEventListener('click',function(){{ if(currentIdx>0) loadTrack(currentIdx-1); }});
-    par.getElementById('np-btn-next').addEventListener('click',function(){{ if(currentIdx<TRACKS.length-1) loadTrack(currentIdx+1); }});
-    par.getElementById('np-btn-mute').addEventListener('click',function(){{
-      if(!ytPlayer) return;
-      if(ytMuted){{ytPlayer.unMute();par.getElementById('np-icon-sound').style.display='block';par.getElementById('np-icon-mute').style.display='none';}}
-      else{{ytPlayer.mute();par.getElementById('np-icon-sound').style.display='none';par.getElementById('np-icon-mute').style.display='block';}}
-      ytMuted=!ytMuted;
-    }});
-  }}
-
-  function loadTrack(idx) {{
-    if (idx < 0 || idx >= TRACKS.length) return;
-    currentIdx = idx;
-    var t = TRACKS[idx];
-    if (par) {{
-      var scroll2=par.getElementById('pl-scroll');
-      if(scroll2){{
-        scroll2.querySelectorAll('.pl-row').forEach(function(r){{r.classList.toggle('active',parseInt(r.dataset.idx)===idx);}});
-        var ar=scroll2.querySelector('.pl-row.active'); if(ar) ar.scrollIntoView({{block:'nearest'}});
-      }}
-      var thumb=par.getElementById('np-thumb'); if(thumb&&t.video_id) thumb.src='https://img.youtube.com/vi/'+t.video_id+'/mqdefault.jpg';
-      var ti=par.getElementById('np-title'); if(ti) ti.textContent=t.name;
-      var art=par.getElementById('np-artist'); if(art) art.textContent=t.artist;
-      var bp=par.getElementById('np-btn-prev'); if(bp) bp.disabled=(idx===0);
-      var bn=par.getElementById('np-btn-next'); if(bn) bn.disabled=(idx===TRACKS.length-1);
-      var fill=par.getElementById('np-fill'); if(fill) fill.style.width='0%';
-      var cur=par.getElementById('np-cur'); if(cur) cur.textContent='0:00';
-      var dur=par.getElementById('np-dur'); if(dur) dur.textContent='0:00';
-      var ip=par.getElementById('np-icon-pause'); if(ip) ip.style.display='block';
-      var ipl=par.getElementById('np-icon-play'); if(ipl) ipl.style.display='none';
-    }}
-    if(ytPlayer&&ytPlayer.loadVideoById&&t.video_id){{ytPlayer.loadVideoById(t.video_id);ytPlaying=true;}}
-  }}
-
-  function initYT() {{
-    ytPlayer = new YT.Player('yt-hidden', {{
-      videoId: TRACKS[currentIdx].video_id,
-      playerVars: {{autoplay:1, controls:0, modestbranding:1, playsinline:1}},
-      events: {{ onReady: function(e) {{ e.target.playVideo(); setInterval(tick, 500); }} }}
-    }});
-  }}
-
-  if (window.YT && window.YT.Player) {{ initYT(); }}
-  else {{
-    var _prev = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = function() {{ if(typeof _prev==='function') _prev(); initYT(); }};
-  }}
-}})();
-</script>
-</body>
-</html>""", height=0, scrolling=False)
 
 # ============================================================================
 # TAB 2 — Describe a Vibe
@@ -1413,3 +1142,322 @@ src/
     └── music_links.py  ← Spotify / YT Music / YouTube-video search URLs
 ```
 """)
+
+
+# ============================================================================
+# GLOBAL PLAYER INJECTION — runs for ANY tab, not nested inside with tab1:
+# so Listen buttons in Tab 2 (Vibe) correctly summon the player.
+# ============================================================================
+if "now_playing" in st.session_state:
+    playing     = st.session_state["now_playing"]
+    current_idx = st.session_state.get("now_playing_idx", 0)
+    rec_list    = st.session_state.get("rec_list", [
+        {"name": playing["name"], "artist": playing["artist"]}
+    ])
+
+    rec_cache_key = "|".join(f"{t['name']}::{t['artist']}" for t in rec_list)
+
+    if st.session_state.get("_track_data_key") != rec_cache_key:
+        with st.spinner("Fetching audio links..."):
+            def _fetch_one(args):
+                t_idx, track = args
+                try:
+                    url = generate_youtube_play_url(track["name"], track["artist"])
+                    vid = url.split("v=")[1].split("&")[0] if url and "v=" in url else ""
+                except Exception:
+                    vid = ""
+                # Build Spotify / YT Music URLs directly from (name, artist) so
+                # this block no longer depends on Tab 1's `recs` DataFrame.
+                sp_url = generate_spotify_search_url(track["name"], track["artist"])
+                yt_url = generate_youtube_music_search_url(track["name"], track["artist"])
+                return t_idx, {
+                    "name":     track["name"],
+                    "artist":   track["artist"],
+                    "video_id": vid,
+                    "seed":     str(t_idx),
+                    "spotify":  sp_url,
+                    "ytmusic":  yt_url,
+                }
+
+            results = [None] * len(rec_list)
+            with ThreadPoolExecutor(max_workers=min(len(rec_list), 10)) as executor:
+                for t_idx, entry in executor.map(_fetch_one, enumerate(rec_list)):
+                    results[t_idx] = entry
+            st.session_state["_track_data"]     = results
+            st.session_state["_track_data_key"] = rec_cache_key
+
+    track_data    = st.session_state["_track_data"]
+    current_track = track_data[current_idx] if track_data else None
+
+    if not current_track or not current_track["video_id"]:
+        st.warning(
+            f"⚠️ Could not fetch a playable clip for "
+            f"**{current_track['name'] if current_track else 'this track'}** "
+            f"(YouTube may have blocked the request). "
+            "Recommendations above are still available — use the Spotify / YouTube Music icons to open links directly."
+        )
+        if st.button("✕ Dismiss & return to full view", key="dismiss_player"):
+            for _k in ["now_playing", "now_playing_idx", "rec_list",
+                       "_track_data", "_track_data_key"]:
+                st.session_state.pop(_k, None)
+            components.html("""<script>
+(function(){
+  var p;try{p=window.parent.document;}catch(e){return;}
+  ['yt-playlist-panel','yt-fixed-player','yt-pl-style','yt-fixed-style'].forEach(function(id){
+    var el=p.getElementById(id); if(el) el.remove();
+  });
+  var mc=p.querySelector('[data-testid="stMainBlockContainer"]')||p.querySelector('.main .block-container');
+  if(mc){mc.style.removeProperty('padding-right');mc.style.removeProperty('padding-bottom');}
+})();
+</script>""", height=0, scrolling=False)
+            st.rerun()
+    else:
+        tracks_json = _json.dumps(track_data)
+        components.html(f"""<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://www.youtube.com/iframe_api"></script>
+</head>
+<body style="margin:0;background:transparent;">
+<div id="yt-hidden" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;"></div>
+<script>
+(function() {{
+  var TRACKS = {tracks_json};
+  var currentIdx = {current_idx};
+  var ytPlayer, ytPlaying = true, ytMuted = false, ytDragging = false;
+
+  function esc(s) {{
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }}
+
+  var par;
+  try {{ par = window.parent.document; }} catch(e) {{ par = null; }}
+
+  function _mc() {{
+    return par && (
+      par.querySelector('[data-testid="stMainBlockContainer"]') ||
+      par.querySelector('.main .block-container')
+    );
+  }}
+
+  function _applyContentPadding() {{
+    var el = _mc(); if (!el) return;
+    var narrow = window.parent.innerWidth < 960;
+    el.style.setProperty('padding-right', narrow ? '' : '295px', 'important');
+    el.style.setProperty('padding-bottom', '110px', 'important');
+    el.style.setProperty('max-width', '100%', 'important');
+    el.style.setProperty('box-sizing', 'border-box', 'important');
+  }}
+  function _resetContentPadding() {{
+    var el = _mc(); if (!el) return;
+    el.style.removeProperty('padding-right');
+    el.style.removeProperty('padding-bottom');
+  }}
+
+  if (par) {{
+    _applyContentPadding();
+    window.parent.addEventListener('resize', _applyContentPadding);
+
+    var eps = par.getElementById('yt-pl-style'); if (eps) eps.remove();
+    var plStyle = par.createElement('style');
+    plStyle.id = 'yt-pl-style';
+    plStyle.textContent = `
+      #yt-playlist-panel {{
+        position:fixed; top:60px; right:16px; width:260px; bottom:96px;
+        background:#181818; border-radius:10px; z-index:99998;
+        display:flex; flex-direction:column; overflow:hidden;
+        box-shadow:0 4px 24px rgba(0,0,0,0.5);
+        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      }}
+      @media (max-width: 900px) {{ #yt-playlist-panel {{ display: none !important; }} }}
+      #yt-playlist-panel .pl-header {{
+        padding:10px 14px 6px; font-size:0.78rem; font-weight:700; color:#b3b3b3;
+        letter-spacing:0.05em; text-transform:uppercase; flex-shrink:0; border-bottom:1px solid #282828;
+      }}
+      #yt-playlist-panel .pl-scroll {{
+        flex:1; overflow-y:auto; scrollbar-width:thin; scrollbar-color:#535353 transparent; padding:4px 0;
+      }}
+      #yt-playlist-panel .pl-scroll::-webkit-scrollbar {{ width:4px; }}
+      #yt-playlist-panel .pl-scroll::-webkit-scrollbar-thumb {{ background:#535353; border-radius:2px; }}
+      #yt-playlist-panel .pl-row {{
+        display:flex; align-items:center; gap:9px; padding:6px 12px;
+        cursor:pointer; transition:background 0.15s; min-width:0; border-left:3px solid transparent;
+      }}
+      #yt-playlist-panel .pl-row:hover {{ background:#282828; }}
+      #yt-playlist-panel .pl-row.active {{ background:#242424; border-left-color:#1DB954; }}
+      #yt-playlist-panel .pl-thumb {{ width:42px; height:42px; border-radius:4px; object-fit:cover; flex-shrink:0; }}
+      #yt-playlist-panel .pl-info {{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }}
+      #yt-playlist-panel .pl-title {{
+        font-size:0.78rem; font-weight:600; color:#fff;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      }}
+      #yt-playlist-panel .pl-row.active .pl-title {{ color:#1DB954; }}
+      #yt-playlist-panel .pl-artist {{
+        font-size:0.68rem; color:#b3b3b3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      }}
+      #yt-playlist-panel .pl-links {{ display:flex; gap:5px; margin-top:3px; align-items:center; }}
+      #yt-playlist-panel .pl-links a {{ line-height:0; opacity:0.65; transition:opacity 0.15s; }}
+      #yt-playlist-panel .pl-links a:hover {{ opacity:1; }}
+    `;
+    par.head.appendChild(plStyle);
+
+    var epp = par.getElementById('yt-playlist-panel'); if (epp) epp.remove();
+    var panel = par.createElement('div');
+    panel.id = 'yt-playlist-panel';
+    panel.innerHTML = '<div class="pl-header">Up Next</div><div class="pl-scroll" id="pl-scroll"></div>';
+    par.body.appendChild(panel);
+
+    var scroll = par.getElementById('pl-scroll');
+    TRACKS.forEach(function(t, i) {{
+      var row = par.createElement('div');
+      row.className = 'pl-row' + (i === currentIdx ? ' active' : '');
+      row.dataset.idx = i;
+      row.innerHTML =
+        '<img class="pl-thumb" src="' + (t.video_id ? ('https://img.youtube.com/vi/' + t.video_id + '/mqdefault.jpg') : ('https://picsum.photos/seed/' + esc(t.seed) + '/80/80')) + '" alt="">' +
+        '<div class="pl-info">' +
+          '<div class="pl-title" title="' + esc(t.name) + '">' + esc(t.name) + '</div>' +
+          '<div class="pl-artist">' + esc(t.artist) + '</div>' +
+          '<div class="pl-links">' +
+            '<a href="' + esc(t.spotify) + '" target="_blank" onclick="event.stopPropagation()">' +
+              '<img src="https://upload.wikimedia.org/wikipedia/commons/1/19/Spotify_logo_without_text.svg" width="14" height="14"></a>' +
+            '<a href="' + esc(t.ytmusic) + '" target="_blank" onclick="event.stopPropagation()">' +
+              '<img src="https://upload.wikimedia.org/wikipedia/commons/6/6a/Youtube_Music_icon.svg" width="14" height="14"></a>' +
+          '</div>' +
+        '</div>';
+      row.addEventListener('click', function() {{ loadTrack(i); }});
+      scroll.appendChild(row);
+    }});
+    var activeRow = scroll.querySelector('.pl-row.active');
+    if (activeRow) activeRow.scrollIntoView({{block:'nearest'}});
+  }}
+
+  if (par) {{
+    var es = par.getElementById('yt-fixed-style'); if (es) es.remove();
+    var styleEl = par.createElement('style');
+    styleEl.id = 'yt-fixed-style';
+    styleEl.textContent = [
+      '#yt-fixed-player {{ position:fixed; bottom:0; left:0; right:0; height:80px; background:#181818; border-top:1px solid #282828; display:flex; align-items:center; padding:0 clamp(12px,2vw,28px); z-index:999999; box-sizing:border-box; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }}',
+      '#yt-fixed-player * {{ box-sizing:border-box; }}',
+      '#yt-fixed-player .np-left {{ display:flex; align-items:center; gap:10px; flex:0 0 200px; min-width:0; overflow:hidden; }}',
+      '#yt-fixed-player .np-thumb {{ width:44px;height:44px;border-radius:5px;object-fit:cover;flex-shrink:0;background:#333; }}',
+      '#yt-fixed-player .np-info {{ display:flex;flex-direction:column;justify-content:center;min-width:0;overflow:hidden; }}',
+      '#yt-fixed-player .np-title {{ font-weight:700;font-size:clamp(.7rem,.85vw,.9rem);color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0; }}',
+      '#yt-fixed-player .np-artist {{ font-size:clamp(.6rem,.7vw,.78rem);color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0; }}',
+      '#yt-fixed-player .np-center {{ display:flex;flex-direction:column;align-items:center;gap:4px;position:absolute;left:50%;transform:translateX(-50%);width:clamp(280px,40vw,560px); }}',
+      '#yt-fixed-player .np-controls {{ display:flex;align-items:center;gap:clamp(4px,0.8vw,10px); }}',
+      '#yt-fixed-player .np-btn {{ background:none;border:none;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;padding:6px;transition:background .15s;flex-shrink:0; }}',
+      '#yt-fixed-player .np-btn:hover {{ background:rgba(255,255,255,.15); }}',
+      '#yt-fixed-player .np-btn-play {{ background:#1DB954;width:36px;height:36px; }}',
+      '#yt-fixed-player .np-btn-play:hover {{ background:#1ed760;transform:scale(1.06); }}',
+      '#yt-fixed-player .np-progress {{ display:flex;align-items:center;gap:8px;width:100%; }}',
+      '#yt-fixed-player .np-time {{ font-size:.68rem;color:#b3b3b3;min-width:36px;text-align:center;flex-shrink:0; }}',
+      '#yt-fixed-player .np-bar-wrap {{ flex:1;height:4px;background:#535353;border-radius:2px;position:relative;cursor:pointer;transition:height .12s;min-width:0; }}',
+      '#yt-fixed-player .np-bar-wrap:hover {{ height:7px; }}',
+      '#yt-fixed-player .np-bar-fill {{ height:100%;width:0%;background:#1DB954;border-radius:2px;pointer-events:none; }}',
+      '#yt-fixed-player .np-bar-wrap:hover .np-bar-fill {{ background:#1ed760; }}',
+      '#yt-fixed-player .np-bar-thumb {{ position:absolute;top:50%;right:-5px;width:11px;height:11px;background:#fff;border-radius:50%;transform:translateY(-50%);opacity:0;transition:opacity .15s;pointer-events:none; }}',
+      '#yt-fixed-player .np-bar-wrap:hover .np-bar-thumb {{ opacity:1; }}',
+      '#yt-fixed-player .np-btn-skip {{ opacity:0.7; }}',
+      '#yt-fixed-player .np-btn-skip:hover:not(:disabled) {{ opacity:1;background:rgba(255,255,255,.15); }}',
+      '#yt-fixed-player .np-btn-skip:disabled {{ opacity:0.25;cursor:default; }}',
+      '@media (max-width: 640px) {{ #yt-fixed-player .np-left {{ flex: 0 0 auto; }} #yt-fixed-player .np-center {{ width: calc(100vw - 120px); }} }}',
+    ].join('\\n');
+    par.head.appendChild(styleEl);
+
+    var ep = par.getElementById('yt-fixed-player'); if (ep) ep.remove();
+    var pdiv = par.createElement('div');
+    pdiv.id = 'yt-fixed-player';
+    var t0 = TRACKS[currentIdx];
+    pdiv.innerHTML =
+      '<div class="np-left">' +
+        '<img class="np-thumb" id="np-thumb" src="https://img.youtube.com/vi/' + t0.video_id + '/mqdefault.jpg" alt="">' +
+        '<div class="np-info"><p class="np-title" id="np-title">' + esc(t0.name) + '</p><p class="np-artist" id="np-artist">' + esc(t0.artist) + '</p></div>' +
+      '</div>' +
+      '<div class="np-center">' +
+        '<div class="np-controls">' +
+          '<button class="np-btn np-btn-skip" id="np-btn-prev"' + (currentIdx===0?' disabled':'') + '><svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="19,5 9,12 19,19"/><rect x="5" y="5" width="3" height="14" rx="1"/></svg></button>' +
+          '<button class="np-btn np-btn-play" id="np-btn-play"><svg id="np-icon-pause" width="16" height="16" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg><svg id="np-icon-play" width="16" height="16" viewBox="0 0 24 24" fill="white" style="display:none"><polygon points="5,3 20,12 5,21"/></svg></button>' +
+          '<button class="np-btn np-btn-skip" id="np-btn-next"' + (currentIdx===TRACKS.length-1?' disabled':'') + '><svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="5,5 15,12 5,19"/><rect x="16" y="5" width="3" height="14" rx="1"/></svg></button>' +
+          '<button class="np-btn" id="np-btn-mute"><svg id="np-icon-sound" width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke="white" stroke-width="2" fill="none"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke="white" stroke-width="2" fill="none"/></svg><svg id="np-icon-mute" width="16" height="16" viewBox="0 0 24 24" fill="white" style="display:none"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><line x1="23" y1="9" x2="17" y2="15" stroke="white" stroke-width="2.2" stroke-linecap="round"/><line x1="17" y1="9" x2="23" y2="15" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg></button>' +
+        '</div>' +
+        '<div class="np-progress"><span class="np-time" id="np-cur">0:00</span><div class="np-bar-wrap" id="np-bar"><div class="np-bar-fill" id="np-fill"><div class="np-bar-thumb"></div></div></div><span class="np-time" id="np-dur">0:00</span></div>' +
+      '</div>';
+    par.body.appendChild(pdiv);
+
+    function fmt(s) {{ s=Math.floor(s||0); return Math.floor(s/60)+':'+((s%60)<10?'0':'')+s%60; }}
+    function tick() {{
+      if (!ytPlayer||!ytPlayer.getCurrentTime||ytDragging) return;
+      var cur=ytPlayer.getCurrentTime(), dur=ytPlayer.getDuration();
+      if (!dur) return;
+      par.getElementById('np-fill').style.width=(cur/dur*100)+'%';
+      par.getElementById('np-cur').textContent=fmt(cur);
+      par.getElementById('np-dur').textContent=fmt(dur);
+    }}
+    function seekAt(e) {{
+      if (!ytPlayer||!ytPlayer.getDuration) return;
+      var bar=par.getElementById('np-bar'), r=bar.getBoundingClientRect();
+      var pct=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+      ytPlayer.seekTo(pct*ytPlayer.getDuration(),true);
+      par.getElementById('np-fill').style.width=(pct*100)+'%';
+    }}
+    par.getElementById('np-bar').addEventListener('mousedown',function(e){{ytDragging=true;seekAt(e);}});
+    par.addEventListener('mousemove',function(e){{if(ytDragging)seekAt(e);}});
+    par.addEventListener('mouseup',function(){{ytDragging=false;}});
+    par.getElementById('np-btn-play').addEventListener('click',function(){{
+      if(!ytPlayer) return;
+      if(ytPlaying){{ytPlayer.pauseVideo();par.getElementById('np-icon-pause').style.display='none';par.getElementById('np-icon-play').style.display='block';}}
+      else{{ytPlayer.playVideo();par.getElementById('np-icon-pause').style.display='block';par.getElementById('np-icon-play').style.display='none';}}
+      ytPlaying=!ytPlaying;
+    }});
+    par.getElementById('np-btn-prev').addEventListener('click',function(){{ if(currentIdx>0) loadTrack(currentIdx-1); }});
+    par.getElementById('np-btn-next').addEventListener('click',function(){{ if(currentIdx<TRACKS.length-1) loadTrack(currentIdx+1); }});
+    par.getElementById('np-btn-mute').addEventListener('click',function(){{
+      if(!ytPlayer) return;
+      if(ytMuted){{ytPlayer.unMute();par.getElementById('np-icon-sound').style.display='block';par.getElementById('np-icon-mute').style.display='none';}}
+      else{{ytPlayer.mute();par.getElementById('np-icon-sound').style.display='none';par.getElementById('np-icon-mute').style.display='block';}}
+      ytMuted=!ytMuted;
+    }});
+  }}
+
+  function loadTrack(idx) {{
+    if (idx < 0 || idx >= TRACKS.length) return;
+    currentIdx = idx;
+    var t = TRACKS[idx];
+    if (par) {{
+      var scroll2=par.getElementById('pl-scroll');
+      if(scroll2){{
+        scroll2.querySelectorAll('.pl-row').forEach(function(r){{r.classList.toggle('active',parseInt(r.dataset.idx)===idx);}});
+        var ar=scroll2.querySelector('.pl-row.active'); if(ar) ar.scrollIntoView({{block:'nearest'}});
+      }}
+      var thumb=par.getElementById('np-thumb'); if(thumb&&t.video_id) thumb.src='https://img.youtube.com/vi/'+t.video_id+'/mqdefault.jpg';
+      var ti=par.getElementById('np-title'); if(ti) ti.textContent=t.name;
+      var art=par.getElementById('np-artist'); if(art) art.textContent=t.artist;
+      var bp=par.getElementById('np-btn-prev'); if(bp) bp.disabled=(idx===0);
+      var bn=par.getElementById('np-btn-next'); if(bn) bn.disabled=(idx===TRACKS.length-1);
+      var fill=par.getElementById('np-fill'); if(fill) fill.style.width='0%';
+      var cur=par.getElementById('np-cur'); if(cur) cur.textContent='0:00';
+      var dur=par.getElementById('np-dur'); if(dur) dur.textContent='0:00';
+      var ip=par.getElementById('np-icon-pause'); if(ip) ip.style.display='block';
+      var ipl=par.getElementById('np-icon-play'); if(ipl) ipl.style.display='none';
+    }}
+    if(ytPlayer&&ytPlayer.loadVideoById&&t.video_id){{ytPlayer.loadVideoById(t.video_id);ytPlaying=true;}}
+  }}
+
+  function initYT() {{
+    ytPlayer = new YT.Player('yt-hidden', {{
+      videoId: TRACKS[currentIdx].video_id,
+      playerVars: {{autoplay:1, controls:0, modestbranding:1, playsinline:1}},
+      events: {{ onReady: function(e) {{ e.target.playVideo(); setInterval(tick, 500); }} }}
+    }});
+  }}
+
+  if (window.YT && window.YT.Player) {{ initYT(); }}
+  else {{
+    var _prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = function() {{ if(typeof _prev==='function') _prev(); initYT(); }};
+  }}
+}})();
+</script>
+</body>
+</html>""", height=0, scrolling=False)

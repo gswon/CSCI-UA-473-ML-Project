@@ -88,7 +88,7 @@ def _render_rec_card(name, artist, seed, sp_url, yt_url,
         f"<img src='{img_src}'"
         f" style='width:100%;aspect-ratio:1/1;object-fit:cover;display:block;'>"
         f"<div style='padding:7px 9px 8px;'>"
-        f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;"
+        f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;color:#FFFFFF;"
         f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'"
         f" title='{name}'>{name}</p>"
         f"<p style='font-size:0.68rem;color:#999;margin:0 0 6px;"
@@ -198,7 +198,7 @@ def render_vibe_extension(top_n=10):
 
     # ── Optional advanced toggle (show raw scores) ──────────────────────────
     show_scores = st.checkbox(
-        "🔍 Show score breakdown (semantic sim + final score)",
+        "🔍 Show score breakdown (cosine similarity + final score)",
         value=False, key="vibe_show_scores",
     )
 
@@ -242,9 +242,9 @@ def render_vibe_extension(top_n=10):
                         f"<div style='background:rgba(29,185,84,0.12);"
                         f"border:1px solid rgba(29,185,84,0.35);"
                         f"border-radius:6px;padding:4px 8px;margin:4px 0;"
-                        f"font-size:0.7rem;color:#ccc;'>"
-                        f"score <b style='color:#1DB954'>{_fs:.3f}</b> · "
-                        f"sim <b style='color:#1DB954'>{_cs:.3f}</b>"
+                        f"font-size:0.7rem;color:#000000;'>"
+                        f"final score <b style='color:#1DB954'>{_fs:.3f}</b> · "
+                        f"cosine similarity <b style='color:#1DB954'>{_cs:.3f}</b>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
