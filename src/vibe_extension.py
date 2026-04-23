@@ -168,8 +168,18 @@ def render_vibe_extension(top_n=10):
 
         candidate_df["final_score"] = (0.7 * candidate_df["cosine_sim"]) + (0.30 * slider_contributions)
 
-        top_results = candidate_df.sort_values(by="final_score", ascending=False).head(top_n).reset_index(drop=True)
-        top_results["clean_artists"] = top_results["artists"].astype(str).str.replace(r"\[|\]|'", "", regex=True)
+        # Rank → dedup on normalized (name, artists) → cut to top_n. The 1.2M
+        # dataset has ~1.7% rows that share (name, artists) across albums/
+        # compilations, so taking head(top_n) first would surface the same
+        # song twice with near-identical scores.
+        ranked = candidate_df.sort_values(by="final_score", ascending=False).reset_index(drop=True)
+        ranked["clean_artists"] = ranked["artists"].astype(str).str.replace(r"\[|\]|'", "", regex=True)
+        dedup_key = (
+            ranked["name"].astype(str).str.strip().str.lower()
+            + "||"
+            + ranked["clean_artists"].astype(str).str.strip().str.lower()
+        )
+        top_results = ranked[~dedup_key.duplicated()].head(top_n).reset_index(drop=True)
 
     st.subheader(f"Top {top_n} matching songs for *'{query}'*")
 

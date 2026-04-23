@@ -120,7 +120,7 @@ class KMeans:
             labels = self._assign(X)
 
             # Step 3: Update (Mean of cluster members)
-            new_centroids = self._update(X, labels)
+            new_centroids = self._update(X, labels, rng)
 
             # Step 4: Check convergence
             # Use Frobenius norm to see how much the centroid matrix shifted
@@ -148,7 +148,7 @@ class KMeans:
         dist = euclidean_distance_matrix(X, self.centroids)   
         return np.argmin(dist, axis=1)                      
 
-    def _update(self, X: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    def _update(self, X: np.ndarray, labels: np.ndarray, rng: np.random.Generator) -> np.ndarray:
         """Standard centroid update: mean of all points in the cluster."""
         n_features = X.shape[1]
         new_centroids = np.zeros((self.k, n_features))
@@ -157,7 +157,7 @@ class KMeans:
             members = X[labels == cluster_id]
             if len(members) == 0:
                 # Handle dead centroids by picking a random point from X
-                new_centroids[cluster_id] = X[np.random.randint(0, len(X))]
+                new_centroids[cluster_id] = X[rng.integers(0, len(X))]
             else:
                 new_centroids[cluster_id] = members.mean(axis=0)
 

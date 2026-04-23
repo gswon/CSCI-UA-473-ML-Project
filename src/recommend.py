@@ -56,12 +56,20 @@ def get_recommendations(
     # Drop exact match if present
     results = results[results["euclidean_distance"] > 1e-10]
 
-    # Drop duplicate song/artist pairs (support both column naming conventions)
+    # Drop duplicate song/artist pairs (support both column naming conventions).
+    # Normalize before comparison so bracket/quote/whitespace/case variations
+    # in the raw dataset do not let the same song through twice.
     name_col   = get_name_col(results)
     artist_col = get_artist_col(results)
-    subset_cols = [c for c in [name_col, artist_col] if c in results.columns]
-    if subset_cols:
-        results = results.drop_duplicates(subset=subset_cols)
+    if name_col in results.columns and artist_col in results.columns:
+        dedup_key = (
+            results[name_col].astype(str).str.strip().str.lower()
+            + "||"
+            + results[artist_col].astype(str)
+                .str.replace(r"[\[\]']", "", regex=True)
+                .str.strip().str.lower()
+        )
+        results = results[~dedup_key.duplicated()]
 
     return results.head(top_n)
 
