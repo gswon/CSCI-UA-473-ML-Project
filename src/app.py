@@ -30,8 +30,83 @@ from utils.thumbnails import get_video_id, get_video_ids_batch, thumb_url
 # Page setup
 # ---------------------------------------------------------------------------
 st.set_page_config(page_title="🎵 Spotify Mood Clusters", page_icon="🎵", layout="wide")
-st.title("🎵 Spotify Mood Playlist Generator")
-st.caption("Personalized k-means clustering — focus on the audio features YOU care about most.")
+
+# ── Global style: tighten top padding + pretty title + themed expander ───
+st.markdown("""
+<style>
+  /* Pull the entire page to the top */
+  .main .block-container,
+  section.main > div.block-container,
+  [data-testid="stAppViewContainer"] .main .block-container {
+    padding-top: 0.8rem !important;
+    padding-bottom: 2rem;
+  }
+  header[data-testid="stHeader"] { background: transparent; height: 0; }
+
+  /* Title: gradient text + subtle glow */
+  .app-title {
+    font-size: clamp(2.2rem, 4.5vw, 3.4rem);
+    font-weight: 900;
+    letter-spacing: -1.2px;
+    line-height: 1.05;
+    margin: 0 0 0.25rem 0;
+    padding: 0;
+    background: linear-gradient(92deg,
+      #1DB954 0%, #1ED760 35%, #A7F3D0 65%, #FFFFFF 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 18px rgba(29, 185, 84, 0.25));
+  }
+  .app-title .note {
+    display: inline-block;
+    transform: translateY(2px);
+    margin-right: 8px;
+    /* Override the parent's transparent fill so the emoji renders normally */
+    -webkit-text-fill-color: initial;
+    background: none;
+    -webkit-background-clip: initial;
+            background-clip: initial;
+    filter: drop-shadow(0 0 8px rgba(29, 185, 84, 0.45));
+  }
+  .app-subtitle {
+    color: #9aa0a6;
+    font-size: 0.95rem;
+    margin: 0 0 0.9rem 0;
+    letter-spacing: 0.2px;
+  }
+  .app-subtitle .accent { color: #1DB954; font-weight: 600; }
+
+  /* Spotify-themed expander headers */
+  [data-testid="stExpander"] > details {
+    border: 1px solid rgba(29, 185, 84, 0.35) !important;
+    border-radius: 12px !important;
+    background: linear-gradient(135deg,
+      rgba(29, 185, 84, 0.08) 0%, rgba(30, 215, 96, 0.02) 100%) !important;
+    overflow: hidden;
+  }
+  [data-testid="stExpander"] > details > summary {
+    font-weight: 700 !important;
+  }
+  [data-testid="stExpander"] > details > summary,
+  [data-testid="stExpander"] > details > summary * {
+    color: #000000 !important;
+  }
+  [data-testid="stExpander"] > details > summary svg {
+    fill: #000000 !important;
+  }
+  [data-testid="stExpander"] > details[open] > summary {
+    border-bottom: 1px solid rgba(29, 185, 84, 0.25) !important;
+    background: rgba(29, 185, 84, 0.10) !important;
+  }
+  [data-testid="stExpander"] > details > summary:hover {
+    background: rgba(29, 185, 84, 0.14) !important;
+  }
+</style>
+
+<h1 class='app-title'><span class='note'>🎵</span>Spotify Mood Playlist Generator</h1>
+<p class='app-subtitle'>Personalized <span class='accent'>k-means</span> clustering — focus on the audio features <span class='accent'>YOU</span> care about most.</p>
+""", unsafe_allow_html=True)
 
 DATA_PATH = Path(__file__).parent.parent / "data" / "tracks_features.csv"
 
@@ -111,7 +186,7 @@ with tab1:
     st.subheader("Find songs that sound like one you already love")
 
     # ── Inline controls ──────────────────────────────────────────────────────
-    with st.expander("⚙️ Clustering & Recommendation Settings", expanded=False):
+    with st.expander("🎛️  Clustering & Recommendation Settings", expanded=False):
         ctrl_col1, ctrl_col2 = st.columns(2)
         with ctrl_col1:
             k = st.slider("Number of mood clusters (k)", 2, 20, 8,
