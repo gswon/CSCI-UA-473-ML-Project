@@ -179,7 +179,15 @@ def render_vibe_extension(top_n=10):
 
         feat_arr = candidate_df[
             ["energy", "danceability", "valence", "acousticness", "speechiness", "tempo"]
-        ].values
+        ].values.astype(np.float32, copy=True)
+
+        # Tempo is stored as raw BPM (0–~250) while the other five features are 0–1.
+        # Min-max scale tempo against the full dataset so every feature sits on the
+        # same [0, 1] scale before the `- 0.5` centering shift — otherwise the tempo
+        # slider would dominate every other slider by ~2 orders of magnitude.
+        tempo_min = float(df["tempo"].min())
+        tempo_max = float(df["tempo"].max())
+        feat_arr[:, 5] = (feat_arr[:, 5] - tempo_min) / max(tempo_max - tempo_min, 1e-9)
 
         slider_weights = np.array([
             slider_energy, slider_dance, slider_mood,
