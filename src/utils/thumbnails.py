@@ -87,6 +87,35 @@ def _fetch_http(name: str, artist: str, timeout: float = 3.0) -> str:
         return ""
 
 
+def _fetch_ytdlp(name: str, artist: str) -> str:
+    """Slower but more reliable fallback — used when HTTP scrape fails.
+
+    Shared between the thumbnail batch path and the in-app Listen player so
+    every surface (Your pick card, recommendation grid, Up Next sidebar)
+    ends up with the same video ID for a given track.
+    """
+    try:
+        import yt_dlp
+        query = f"{name} {_clean_artist(artist)} official audio"
+        opts = {"quiet": True, "no_warnings": True,
+                "extract_flat": True, "noplaylist": True}
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            result = ydl.extract_info(f"ytsearch1:{query}", download=False)
+        if result and result.get("entries"):
+            return result["entries"][0].get("id", "") or ""
+    except Exception:
+        pass
+    return ""
+
+
+def _fetch_with_fallback(name: str, artist: str) -> str:
+    """Fast HTTP scrape first, yt_dlp fallback on failure."""
+    vid = _fetch_http(name, artist)
+    if not vid:
+        vid = _fetch_ytdlp(name, artist)
+    return vid
+
+
 def get_video_id(name: str, artist: str) -> str:
     """Single lookup — returns cached ID or fetches once."""
     if not name:
@@ -95,7 +124,7 @@ def get_video_id(name: str, artist: str) -> str:
     key = _cache_key(name, artist)
     if key in cache and cache[key]:
         return cache[key]
-    vid = _fetch_http(name, artist)
+    vid = _fetch_with_fallback(name, artist)
     # Only cache real hits; empty results stay retryable so a transient
     # YouTube failure does not poison the card thumbnail forever.
     if vid:
@@ -128,7 +157,7 @@ def get_video_ids_batch(pairs: list, max_workers: int = 20) -> dict:
 
     def _one(item):
         n, a, k = item
-        return k, (n, a), _fetch_http(n, a)
+        return k, (n, a), _fetch_with_fallback(n, a)
 
     workers = max(1, min(len(to_fetch), max_workers))
     wrote_any = False
