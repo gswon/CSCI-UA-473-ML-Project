@@ -189,7 +189,7 @@ def render_vibe_extension(top_n=10):
         shifted_features = feat_arr - 0.5
         slider_contributions = np.sum(shifted_features * slider_weights, axis=1)
 
-        candidate_df["final_score"] = (0.7 * candidate_df["cosine_sim"]) + (0.05 * slider_contributions)
+        candidate_df["final_score"] = (0.7 * candidate_df["cosine_sim"]) + (0.30 * slider_contributions)
 
         top_results = candidate_df.sort_values(by="final_score", ascending=False).head(top_n).reset_index(drop=True)
         top_results["clean_artists"] = top_results["artists"].astype(str).str.replace(r"\[|\]|'", "", regex=True)
