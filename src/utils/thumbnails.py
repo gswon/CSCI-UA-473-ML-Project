@@ -93,12 +93,15 @@ def get_video_id(name: str, artist: str) -> str:
         return ""
     cache = _load_cache()
     key = _cache_key(name, artist)
-    if key in cache:
+    if key in cache and cache[key]:
         return cache[key]
     vid = _fetch_http(name, artist)
-    with _cache_lock:
-        cache[key] = vid
-    _save_cache()
+    # Only cache real hits; empty results stay retryable so a transient
+    # YouTube failure does not poison the card thumbnail forever.
+    if vid:
+        with _cache_lock:
+            cache[key] = vid
+        _save_cache()
     return vid
 
 
@@ -115,7 +118,7 @@ def get_video_ids_batch(pairs: list, max_workers: int = 20) -> dict:
             result[(name, artist)] = ""
             continue
         key = _cache_key(name, artist)
-        if key in cache:
+        if key in cache and cache[key]:
             result[(name, artist)] = cache[key]
         else:
             to_fetch.append((name, artist, key))
@@ -128,13 +131,19 @@ def get_video_ids_batch(pairs: list, max_workers: int = 20) -> dict:
         return k, (n, a), _fetch_http(n, a)
 
     workers = max(1, min(len(to_fetch), max_workers))
+    wrote_any = False
     with ThreadPoolExecutor(max_workers=workers) as ex:
         for k, pair, vid in ex.map(_one, to_fetch):
-            with _cache_lock:
-                cache[k] = vid
+            # Skip cache writes for failed scrapes so they retry next time
+            # instead of permanently rendering a picsum placeholder.
+            if vid:
+                with _cache_lock:
+                    cache[k] = vid
+                wrote_any = True
             result[pair] = vid
 
-    _save_cache()
+    if wrote_any:
+        _save_cache()
     return result
 
 
