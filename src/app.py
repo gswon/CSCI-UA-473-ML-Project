@@ -24,6 +24,7 @@ from recommend import get_recommendations, song_to_vector, fuzzy_search
 from reduce import pca_reduce
 from mood_labels import label_all_clusters
 from vibe_extension import render_vibe_extension
+from utils.thumbnails import get_video_id, get_video_ids_batch, thumb_url
 
 # ---------------------------------------------------------------------------
 # Page setup
@@ -329,6 +330,8 @@ with tab1:
             _q_artist    = str(df_tab1.iloc[query_idx].get(artist_col, "")).replace("[", "").replace("]", "").replace("'", "").strip() if query_idx is not None else ""
             _q_sp_url    = _gen_sp(_q_name, _q_artist)
             _q_yt_url    = _gen_yt(_q_name, _q_artist)
+            _q_vid       = get_video_id(_q_name, _q_artist) if _q_name else ""
+            _q_img       = thumb_url(_q_vid, size="mq", fallback_seed=_q_seed)
 
             st.subheader("🎯 Your pick")
             pick_left, pick_right = st.columns([1, 4])
@@ -340,8 +343,8 @@ with tab1:
                     f"<div style='position:absolute;top:6px;left:6px;z-index:2;"
                     f"background:#FFD700;color:#000;font-size:0.62rem;font-weight:700;"
                     f"padding:2px 6px;border-radius:4px;'>YOUR SONG</div>"
-                    f"<img src='https://picsum.photos/seed/{_q_seed}/200/200'"
-                    f" style='width:100%;display:block;'>"
+                    f"<img src='{_q_img}'"
+                    f" style='width:100%;aspect-ratio:1/1;object-fit:cover;display:block;'>"
                     f"<div style='padding:7px 9px 8px;'>"
                     f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;"
                     f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'"
@@ -437,6 +440,13 @@ with tab1:
                     for _i in range(len(recs))
                 ]
 
+                # Batch-fetch YouTube video IDs in parallel (disk-cached, so
+                # repeat queries are instant). Gives us real thumbnails for
+                # every card AND pre-warms the cache for Listen playback.
+                _rec_pairs = [(t["name"], t["artist"]) for t in _rec_list_full]
+                with st.spinner("Loading covers..."):
+                    _vid_map = get_video_ids_batch(_rec_pairs)
+
                 st.write("")
                 COLS = 5
                 for _row_start in range(0, len(recs), COLS):
@@ -449,12 +459,14 @@ with tab1:
                         _yt = str(recs.iloc[_pos]["YouTube Music"])
                         _rname = str(getattr(_row_s, name_col, ""))
                         _rartist = str(getattr(_row_s, artist_col, ""))
+                        _rvid = _vid_map.get((_rname, _rartist), "")
+                        _rimg = thumb_url(_rvid, size="mq", fallback_seed=_seed)
                         with _cols[_ci]:
                             st.markdown(
                                 f"<div style='border:1px solid rgba(255,255,255,0.12);border-radius:10px;"
                                 f"overflow:hidden;background:#1a1a1a;margin-bottom:4px;position:relative;'>"
-                                f"<img src='https://picsum.photos/seed/{_seed}/200/200'"
-                                f" style='width:100%;display:block;'>"
+                                f"<img src='{_rimg}'"
+                                f" style='width:100%;aspect-ratio:1/1;object-fit:cover;display:block;'>"
                                 f"<div style='padding:7px 9px 8px;'>"
                                 f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;"
                                 f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'"
@@ -940,7 +952,7 @@ with tab1:
       row.className = 'pl-row' + (i === currentIdx ? ' active' : '');
       row.dataset.idx = i;
       row.innerHTML =
-        '<img class="pl-thumb" src="https://picsum.photos/seed/' + esc(t.seed) + '/80/80" alt="">' +
+        '<img class="pl-thumb" src="' + (t.video_id ? ('https://img.youtube.com/vi/' + t.video_id + '/mqdefault.jpg') : ('https://picsum.photos/seed/' + esc(t.seed) + '/80/80')) + '" alt="">' +
         '<div class="pl-info">' +
           '<div class="pl-title" title="' + esc(t.name) + '">' + esc(t.name) + '</div>' +
           '<div class="pl-artist">' + esc(t.artist) + '</div>' +

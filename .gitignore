@@ -5,3 +5,6 @@ data/tracks_features.csv
 data/song_vectors.npy
 data/processed_songs.parquet
 CLAUDE.md
+data/video_id_cache.json
+data/video_id_cache.json
+data/video_id_cache.json

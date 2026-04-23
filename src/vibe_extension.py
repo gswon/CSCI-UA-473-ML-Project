@@ -11,6 +11,7 @@ from utils.music_links import (
     generate_spotify_search_url,
     generate_youtube_music_search_url,
 )
+from utils.thumbnails import get_video_ids_batch, thumb_url
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -69,7 +70,8 @@ def vibe_assets_exist():
     return PARQUET_PATH.exists() and VECTORS_PATH.exists() and TEXT_MODEL_PATH.exists()
 
 
-def _render_rec_card(name, artist, seed, sp_url, yt_url, border_gold=False, badge=None):
+def _render_rec_card(name, artist, seed, sp_url, yt_url,
+                     border_gold=False, badge=None, video_id=""):
     """Render one recommendation card matching the Find-Similar-Songs layout."""
     border = "2px solid #FFD700" if border_gold else "1px solid rgba(255,255,255,0.12)"
     badge_html = (
@@ -78,12 +80,13 @@ def _render_rec_card(name, artist, seed, sp_url, yt_url, border_gold=False, badg
         f"padding:2px 6px;border-radius:4px;'>{badge}</div>"
         if badge else ""
     )
+    img_src = thumb_url(video_id, size="mq", fallback_seed=str(seed))
     st.markdown(
         f"<div style='border:{border};border-radius:10px;"
         f"overflow:hidden;background:#1a1a1a;margin-bottom:4px;position:relative;'>"
         f"{badge_html}"
-        f"<img src='https://picsum.photos/seed/{seed}/200/200'"
-        f" style='width:100%;display:block;'>"
+        f"<img src='{img_src}'"
+        f" style='width:100%;aspect-ratio:1/1;object-fit:cover;display:block;'>"
         f"<div style='padding:7px 9px 8px;'>"
         f"<p style='font-size:0.8rem;font-weight:700;margin:0 0 2px;"
         f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'"
@@ -207,6 +210,12 @@ def render_vibe_extension(top_n=10):
         for _, row in top_results.iterrows()
     ]
 
+    # Batch-fetch YouTube video IDs for all cards in parallel (disk-cached,
+    # so repeat queries are instant). Used for real thumbnails + faster Listen.
+    _pairs = [(t["name"], t["artist"]) for t in rec_list]
+    with st.spinner("Loading covers..."):
+        _vid_map = get_video_ids_batch(_pairs)
+
     for _row_start in range(0, len(top_results), COLS):
         _row_recs = top_results.iloc[_row_start:_row_start + COLS]
         _cols = st.columns(COLS)
@@ -218,10 +227,12 @@ def render_vibe_extension(top_n=10):
             _artist = str(_row["clean_artists"])
             _sp_url = generate_spotify_search_url(_name, _artist)
             _yt_url = generate_youtube_music_search_url(_name, _artist)
+            _vid = _vid_map.get((_name, _artist), "")
             with _cols[_ci]:
                 _render_rec_card(
                     name=_name, artist=_artist, seed=_seed,
                     sp_url=_sp_url, yt_url=_yt_url,
+                    video_id=_vid,
                 )
 
                 if show_scores:
