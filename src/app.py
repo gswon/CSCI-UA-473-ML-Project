@@ -896,10 +896,12 @@ with tab3:
 
     X_w_eval = apply_feature_weights(X_norm, _weights_eval)
     labels_eval = _model_eval.labels_
-    centroids_eval = _model_eval.centroids  # keep if you need weighted centroids elsewhere
+    # Raw centroids (averages of X_norm per cluster) live in the original
+    # [0, 1] feature space. Feed these — not model.centroids, which live in
+    # weighted space — to label_all_clusters so its hardcoded thresholds
+    # actually describe the songs in the cluster.
     raw_centroids_eval = compute_raw_centroids(X_norm, labels_eval, _k_eval)
     inertia_eval = _model_eval.inertia_
-    _mood_map = label_all_clusters(centroids_eval, feature_names=AUDIO_FEATURES)
     
     # ── Top-line metrics ───────────────────────────────────────────────────
     st.subheader("Cluster Quality at a Glance")
@@ -990,7 +992,7 @@ with tab3:
     st.subheader("Cluster Balance")
     st.caption("Imbalanced clusters (one huge, many tiny) often signal poor k or noisy features.")
     _counts = pd.Series(labels_eval).value_counts().sort_index()
-    _mood_map = label_all_clusters(centroids_eval, feature_names=AUDIO_FEATURES)
+    _mood_map = label_all_clusters(raw_centroids_eval, feature_names=AUDIO_FEATURES)
     _balance_df = pd.DataFrame({
         "Cluster": _counts.index,
         "Mood":    [_mood_map.get(int(c), "?") for c in _counts.index],
