@@ -13,10 +13,10 @@ The goal of the app is to make music discovery both **practical** and **interpre
 
 | Member(s) | Role |
 |---|---|
-| **Shi** | Transformer development and testing (`src/models/transformer.py`, `src/vibe_extension.py`) |
-| **Enoch** | Transformer training and data preprocessing (offline training / preprocessing pipeline) |
-| **Jonathan** | K-means implementation, transformer integration, and evaluation (`src/kmeans.py`, `src/app.py`) |
-| **Gangwon** | Frontend interface, UI/UX, dataset pipeline, and app integration (`src/app.py`) |
+| **Shi** | Transformer development, testing (`src/models/transformer.py`, `src/vibe_extension.py`) |
+| **Enoch** | Transformer training, testing, data preprocessing (offline training / preprocessing pipeline) |
+| **Jonathan** | K-means implementation, transformer integration, testing (`src/kmeans.py`, `src/app.py`) |
+| **Gangwon** | Frontend interface, UI/UX, dataset pipeline, app integration (`src/app.py`) |
 | **Majo** | Presentation and evaluation |
 
 ---
