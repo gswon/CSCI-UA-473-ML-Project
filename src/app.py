@@ -192,6 +192,18 @@ def build_name_lookup(_df):
 
 _names_arr, _artists_arr, _lower_series = build_name_lookup(df)
 
+def compute_raw_centroids(X_raw: np.ndarray, labels: np.ndarray, k: int) -> np.ndarray:
+    """
+    Recompute centroids in the original normalized feature space for display only.
+    Clustering itself still happens in weighted space.
+    """
+    raw_centroids = np.zeros((k, X_raw.shape[1]), dtype=np.float32)
+    for cluster_id in range(k):
+        members = X_raw[labels == cluster_id]
+        if len(members) > 0:
+            raw_centroids[cluster_id] = members.mean(axis=0)
+    return raw_centroids
+
 # ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
@@ -327,7 +339,8 @@ with tab1:
 
     df_tab1 = df.iloc[:len(X_norm)].copy().reset_index(drop=True)
     df_tab1["cluster_id"] = model.labels_
-    mood_map = label_all_clusters(model.centroids, feature_names=AUDIO_FEATURES)
+    raw_centroids = compute_raw_centroids(X_norm, model.labels_, k)
+    mood_map = label_all_clusters(raw_centroids, feature_names=AUDIO_FEATURES)
     df_tab1["mood"] = df_tab1["cluster_id"].map(mood_map)
 
     name_col   = get_name_col(df_tab1)
@@ -475,8 +488,8 @@ with tab1:
                     render_stat("Release Year", str(year))
 
                 # Audio profile bar chart (song vs cluster average)
-                song_feats     = X_norm[query_idx] if query_idx is not None else query_vec
-                centroid_feats = model.centroids[cluster_id]
+                song_feats = X_norm[query_idx] if query_idx is not None else query_vec
+                centroid_feats = raw_centroids[cluster_id]
                 feat_df = pd.DataFrame({
                     "Feature":         [FEATURE_LABELS.get(f, f) for f in AUDIO_FEATURES],
                     "This Song":       song_feats.round(3),
@@ -760,12 +773,12 @@ with tab1:
                         )
                         def _summary_rows(df):
                             out = []
-                            for r in df.itertuples():
-                                n = f"{int(getattr(r, '_3', 0)):,}"
+                            for _, r in df.iterrows():
+                                n = f"{int(r['# Songs']):,}"
                                 out.append(
                                     f"<tr>"
-                                    f"<td style='text-align:center;padding:6px 12px;border-bottom:1px solid #333;'>{int(r.cluster_id)}</td>"
-                                    f"<td style='text-align:left;padding:6px 12px;border-bottom:1px solid #333;'>{r.mood}</td>"
+                                    f"<td style='text-align:center;padding:6px 12px;border-bottom:1px solid #333;'>{int(r['cluster_id'])}</td>"
+                                    f"<td style='text-align:left;padding:6px 12px;border-bottom:1px solid #333;'>{r['mood']}</td>"
                                     f"<td style='text-align:left;padding:6px 12px;border-bottom:1px solid #333;'>{n}</td>"
                                     f"</tr>"
                                 )
@@ -883,9 +896,11 @@ with tab3:
 
     X_w_eval = apply_feature_weights(X_norm, _weights_eval)
     labels_eval = _model_eval.labels_
-    centroids_eval = _model_eval.centroids
+    centroids_eval = _model_eval.centroids  # keep if you need weighted centroids elsewhere
+    raw_centroids_eval = compute_raw_centroids(X_norm, labels_eval, _k_eval)
     inertia_eval = _model_eval.inertia_
-
+    _mood_map = label_all_clusters(centroids_eval, feature_names=AUDIO_FEATURES)
+    
     # ── Top-line metrics ───────────────────────────────────────────────────
     st.subheader("Cluster Quality at a Glance")
     col1, col2, col3, col4 = st.columns(4)
