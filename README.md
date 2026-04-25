@@ -127,17 +127,45 @@ These features are useful because they describe the **acoustic character** of a 
 
 ## Setup
 
-Clone the repository and install the required dependencies:
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/gswon/CSCI-UA-473-ML-Project.git
 cd CSCI-UA-473-ML-Project
-pip3 install -r requirements.txt
 ```
 
-A virtual environment is optional but recommended.
+### 2. Create and activate a virtual environment
 
-After installing dependencies, download the required local files from the shared Drive folder and place them in the correct folders.
+**macOS / Linux**
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+**Windows**
+```bash
+python -m venv venv
+venv\Scripts\activate
+```
+
+Your terminal prompt will show `(venv)` when the environment is active.
+
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Download required data files
+
+Download the required local files from the shared Google Drive folder and place them in the correct locations (see **Download Instructions** above).
+
+### Deactivating the environment
+
+When you are done, run:
+```bash
+deactivate
+```
 
 ### Minimum setup for the core app
 ```text
@@ -156,10 +184,10 @@ models/saved/text_model.pth
 
 ## Running the App
 
-From the project root, run:
+Make sure the virtual environment is active (`source venv/bin/activate` on macOS/Linux), then from the project root run:
 
 ```bash
-python3 -m streamlit run src/app.py
+streamlit run src/app.py
 ```
 
 The app should launch with four tabs:
