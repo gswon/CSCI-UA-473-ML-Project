@@ -47,7 +47,7 @@ Together, these two modes make the project both:
 
 ## Dataset
 
-This project uses the Spotify 12M Songs dataset.
+This project uses the Spotify 1.2M Songs dataset.
 
 **Original Kaggle source:**  
 `https://www.kaggle.com/datasets/rodolfofigueroa/spotify-12m-songs`
