@@ -152,7 +152,7 @@ st.markdown("""
 </style>
 
 <h1 class='app-title'><span class='note'>🎵</span>Spotify Mood Playlist Generator</h1>
-<p class='app-subtitle'>Personalized <span class='accent'>k-means</span> clustering — focus on the audio features <span class='accent'>YOU</span> care about most.</p>
+<p class='app-subtitle'>Personalized <span class='accent'>k-means clustering</span> and <span class='accent'>Transformer</span>-based vibe search — focused on the audio features <span class='accent'>YOU</span> care about most.</p>
 """, unsafe_allow_html=True)
 
 DATA_PATH = Path(__file__).parent.parent / "data" / "tracks_features.csv"
