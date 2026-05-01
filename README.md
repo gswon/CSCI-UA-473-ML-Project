@@ -17,7 +17,7 @@ The goal of the app is to make music discovery both **practical** and **interpre
 | **Enoch** | Transformer training, testing, data preprocessing (offline training / preprocessing pipeline) |
 | **Jonathan** | K-means implementation, transformer integration, testing (`src/kmeans.py`, `src/app.py`) |
 | **Gangwon** | Frontend interface, UI/UX, dataset pipeline, app integration (`src/app.py`) |
-| **Majo** | Presentation and evaluation |
+| **Majo** | Overview and Evaluation |
 
 ---
 
@@ -30,8 +30,8 @@ If a user already knows a song they like, the app:
 1. represents songs as normalized audio-feature vectors,
 2. lets the user assign custom feature weights,
 3. clusters songs into broad mood groups using **k-means implemented from scratch in NumPy**,
-4. recommends nearby songs using **weighted squared Euclidean distance**, and
-5. visualizes the weighted feature space in **2D using PCA**.
+4. recommends nearby songs using **weighted squared Euclidean distance**,
+5. and visualizes the weighted feature space in **2D using PCA**.
 
 ### 2. Vibe-based recommendation
 If a user does **not** know a specific song but does know the mood they want, the app:
@@ -54,7 +54,10 @@ This project uses the Spotify 1.2M Songs dataset.
 
 For reproducibility, the large local data files used by this project are provided through the shared Google Drive folder rather than Git.
 
+We intentionally kept several large data artifacts out of version control so the repository would stay lightweight and easier to manage, while still allowing the app to use the larger dataset and embedding files needed for the full two-mode system.
+
 ### Files not tracked by Git
+
 The following large files are **not tracked by Git** and must be added locally:
 
 ```text
@@ -69,11 +72,14 @@ For the full two-mode app, the transformer extension also expects:
 models/saved/text_model.pth
 ```
 
+At the time of writing, `text_model.pth` is already included in the online repository, but the three data files above must still be downloaded separately and placed locally.
+
 ---
 
 ## Download Instructions
 
 ### Recommended setup
+
 Download the required local files from the shared Google Drive folder:
 
 `https://drive.google.com/drive/folders/1jy1K0jz-N8vAYSyWdiRXqWnojHy0bEjs?usp=sharing`
@@ -88,6 +94,7 @@ models/saved/text_model.pth
 ```
 
 ### Dataset reference
+
 If needed, the original raw dataset can also be obtained from Kaggle:
 
 `https://www.kaggle.com/datasets/rodolfofigueroa/spotify-12m-songs`
@@ -101,6 +108,7 @@ However, for this repository, the intended setup is to use the files provided th
 The project uses Spotify audio features to represent songs in a numeric feature space.
 
 ### Core song-mode features
+
 The clustering and nearest-neighbor recommendation pipeline uses:
 - danceability
 - energy
@@ -113,6 +121,7 @@ The clustering and nearest-neighbor recommendation pipeline uses:
 - tempo
 
 ### Transformer-mode features
+
 The semantic vibe extension uses a 6-feature song representation during training and reranking:
 - danceability
 - energy
@@ -163,16 +172,19 @@ Download the required local files from the shared Google Drive folder and place 
 ### Deactivating the environment
 
 When you are done, run:
+
 ```bash
 deactivate
 ```
 
 ### Minimum setup for the core app
+
 ```text
 data/tracks_features.csv
 ```
 
 ### Full setup for the complete two-mode app
+
 ```text
 data/tracks_features.csv
 data/processed_songs.parquet
@@ -223,7 +235,8 @@ CSCI-UA-473-ML-Project/
 │   └── song_vectors.npy           # local transformer embedding matrix (not tracked by Git)
 ├── models/
 │   └── saved/
-│       └── text_model.pth         # local transformer weights file
+│       ├── audio_model.pth
+│       └── text_model.pth
 ├── src/
 │   ├── app.py
 │   ├── preprocess.py
@@ -241,8 +254,9 @@ CSCI-UA-473-ML-Project/
 │   └── models/
 │       ├── __init__.py
 │       └── transformer.py
-└── tests/
-    └── test_kmeans.py
+├── tests/
+│   └── test_kmeans.py
+└── training/
 ```
 
 ---
@@ -251,17 +265,9 @@ CSCI-UA-473-ML-Project/
 
 The project contains **two main algorithmic pipelines**.
 
----
-
 ### 1. Song Representation
 
-In the song-based mode, each song is represented as a numeric feature vector
-
-\[
-x_i \in \mathbb{R}^d
-\]
-
-where the coordinates are Spotify audio features such as danceability, energy, loudness, acousticness, speechiness, valence, tempo, and others.
+In the song-based mode, each song is represented as a numeric feature vector whose coordinates are Spotify audio features such as danceability, energy, loudness, acousticness, speechiness, valence, tempo, and others.
 
 The preprocessing pipeline:
 - loads `tracks_features.csv`,
@@ -271,43 +277,34 @@ The preprocessing pipeline:
 
 This gives a clean vector space for clustering and recommendation.
 
----
-
 ### 2. User-Controlled Feature Weighting
 
 The sidebar sliders let the user decide which feature dimensions matter most.
 
-If
+The app applies those weights to the normalized feature matrix before clustering and recommendation. In practice, this means the sliders directly reshape the geometry of the song space.
 
-\[
-w = (w_1, \dots, w_d)
-\]
-
-is the user’s feature-weight vector, then the app applies those weights to the normalized feature matrix before clustering and recommendation.
-
-This means the sliders are not cosmetic — they directly change the geometry of the song space.  
 For example:
-- increasing **energy** and **tempo** emphasizes more energetic/upbeat tracks,
+- increasing **energy** and **tempo** makes those differences matter more when songs are clustered and ranked,
 - increasing **acousticness** emphasizes more acoustic songs,
-- setting a feature weight near `0` makes that feature largely irrelevant.
-
----
+- setting a feature weight near `0` makes that feature contribute much less to similarity.
 
 ### 3. K-Means Clustering (`src/kmeans.py`)
 
 K-means is implemented **from scratch** using NumPy.
 
-The algorithm minimizes within-cluster squared distance:
+The algorithm is based on the standard k-means objective: it tries to minimize the total squared distance from each song to the centroid of the cluster it is assigned to. Equivalently, it tries to make each cluster as compact as possible under squared Euclidean distance.
 
-\[
-J = \sum_{k=1}^{K} \sum_{x_i \in C_k} \|x_i - \mu_k\|_2^2
-\]
+At a high level, the algorithm repeatedly does two things:
 
-where:
-- \(C_k\) is cluster \(k\),
-- \(\mu_k\) is the centroid of cluster \(k\).
+1. **Assignment step:** assign each song to the cluster whose centroid is closest under squared Euclidean distance.
+2. **Update step:** replace each centroid with the mean of the songs currently assigned to that cluster.
+
+In other words, the centroid update follows the usual k-means rule that each centroid should be the average of the points in its cluster.
+
+This alternating process continues until the centroids stop moving by more than a small tolerance.
 
 #### Implementation details
+
 The implementation includes:
 - **k-means++ initialization**
 - **vectorized squared Euclidean distance computation**
@@ -316,6 +313,7 @@ The implementation includes:
 - inertia tracking for the elbow plot
 
 #### Why k-means is appropriate here
+
 K-means is justified because:
 - songs are already represented as vectors in a feature space,
 - the course explicitly covered clustering,
@@ -323,8 +321,6 @@ K-means is justified because:
 - and k-means fits naturally with Euclidean geometry and nearest-neighbor recommendation.
 
 This is one of the most important algorithmic choices in the project.
-
----
 
 ### 4. Song Recommendation (`src/recommend.py`)
 
@@ -335,21 +331,20 @@ Once a user selects a song:
 4. nearby songs are retrieved, typically from the same cluster,
 5. candidates are ranked using **weighted squared Euclidean distance**.
 
-A clean form of the distance is:
-
-\[
-d(q, x_i) = \sum_{j=1}^{d} w_j (q_j - x_{i,j})^2
-\]
-
-Smaller distance means more similar under the current user settings.
+This ranking works by making feature differences count more heavily when their slider weights are larger. So when a user increases a feature weight, that feature contributes more strongly to the final distance used for recommendation.
 
 This creates a recommendation pipeline that is both **interpretable** and **interactive**.
-
----
 
 ### 5. PCA Visualization (`src/reduce.py`)
 
 To make clustering interpretable, the app projects the weighted high-dimensional feature space into 2D using PCA.
+
+The PCA implementation:
+- centers the weighted data matrix,
+- computes its singular value decomposition (SVD),
+- and projects the songs onto the first two principal directions.
+
+Conceptually, PCA chooses the two directions that explain the most variance in the weighted feature space, then uses those directions to form a 2D view of the data.
 
 PCA is used **only for visualization**.  
 It helps the user:
@@ -359,17 +354,13 @@ It helps the user:
 
 It is **not** the actual recommendation metric.
 
----
-
 ### 6. Choosing the Number of Clusters
 
 The app includes an elbow analysis based on cluster inertia.
 
-This helps justify the choice of \(k\) by showing how the clustering objective changes as \(k\) increases.
+Inertia is the k-means objective evaluated on the final clustering: the total within-cluster squared distance. The elbow plot compares that quantity across different values of `k` to help justify the choice of cluster count.
 
 This was included because the course expects algorithmic decisions to be justified, not chosen arbitrarily.
-
----
 
 ### 7. Song Search Engine (`src/utils/search.py`)
 
@@ -382,25 +373,17 @@ The search logic includes:
 
 This makes the UI fast enough for a large dataset while still supporting typo tolerance and partial queries.
 
----
-
 ### 8. Transformer-Based Vibe Search (`src/models/transformer.py`, `src/vibe_extension.py`)
 
 The vibe extension supports natural-language prompts such as:
-
 - `late night driving`
 - `energetic workout`
 - `calm rainy evening`
 
-The text is encoded by a custom Transformer:
-
-\[
-q = T(\text{text})
-\]
-
-where \(q \in \mathbb{R}^{128}\) is a learned sentence embedding.
+The text is encoded by a custom Transformer into a learned sentence embedding. In practical terms, this means the model turns a sentence into a 128-dimensional vector that can be compared to precomputed song vectors.
 
 #### Transformer architecture
+
 The Transformer includes:
 - token embeddings,
 - positional encoding,
@@ -411,29 +394,23 @@ The Transformer includes:
 
 This produces one dense embedding for the entire query sentence.
 
----
-
 ### 9. Offline Transformer Training and Preprocessing
 
 The transformer extension depends on an **offline pipeline** that was run before the assets were imported into this repository.
 
 The relevant files for that process are:
-
 - `pipeline/reduce_dataset.py`
 - `pipeline/train.py`
 - `pipeline/index_builder.py`
 
 #### What those steps do
-1. **`reduce_dataset.py`**  
-   reduces the very large song dataset to a manageable subset for training and experimentation.
 
-2. **`train.py`**  
-   trains the text-side Transformer together with the song-side embedding model.
-
-3. **`index_builder.py`**  
-   generates the precomputed song embedding matrix used at inference time.
+1. **`reduce_dataset.py`** reduces the very large song dataset to a manageable subset for training and experimentation.
+2. **`train.py`** trains the text-side Transformer together with the song-side embedding model.
+3. **`index_builder.py`** generates the precomputed song embedding matrix used at inference time.
 
 #### What training learns
+
 The semantic pipeline learns a **shared latent space** between:
 - text descriptions on the query side,
 - and song-feature embeddings on the song side.
@@ -444,8 +421,6 @@ Training is based on a contrastive alignment objective plus song-side reconstruc
 - and the song embeddings still preserve information about the original song features.
 
 At runtime, this is what allows a sentence prompt to retrieve musically relevant candidates.
-
----
 
 ### 10. Semantic Retrieval + Slider Reranking (`src/vibe_extension.py`)
 
@@ -460,32 +435,19 @@ At inference time:
 3. the top semantic candidates are retrieved,
 4. those candidates are reranked using user-controlled Spotify feature sliders.
 
-A simplified final score looks like:
+Conceptually, the final ranking is a combination of two ideas:
+- semantic similarity between the text prompt and the candidate songs,
+- explicit audio-feature preferences provided by the slider settings.
 
-\[
-\text{FinalScore}_i
-=
-\lambda \,\text{sim}(q, v_i)
-+
-\alpha \,\langle f_i, w \rangle
-\]
-
-where:
-- \(q\) is the text-query embedding,
-- \(v_i\) is the candidate song embedding,
-- \(f_i\) is the candidate’s audio-feature vector,
-- \(w\) is the slider-weight vector.
+So the final result is not based only on the sentence embedding and not only on the sliders. Instead, the app first finds semantically relevant candidates, then refines those candidates using explicit audio-feature preferences such as energy, danceability, valence, acousticness, speechiness, and tempo.
 
 This makes the vibe mode both:
 - **semantic** (matching the meaning of the sentence), and
 - **interactive** (letting the user refine the results in real time).
 
----
-
 ### 11. Why These Methods Fit the Course
 
 This project directly reflects the course themes emphasized in the syllabus:
-
 - **vector representations**
 - **similarity metrics**
 - **nearest-neighbor retrieval**
