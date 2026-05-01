@@ -1,5 +1,7 @@
 venv/
 __pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
 .DS_Store
 data/tracks_features.csv
 data/song_vectors.npy
