@@ -9,13 +9,10 @@ looks like in the original normalized space.
 
 import numpy as np
 
-FEATURE_NAMES = [
-    "danceability", "energy", "loudness", "speechiness",
-    "acousticness", "instrumentalness", "liveness", "valence", "tempo", "track_popularity"
-]
+from preprocess import AUDIO_FEATURES
 
 
-def label_cluster(centroid: np.ndarray, feature_names: list[str] = FEATURE_NAMES) -> str:
+def label_cluster(centroid: np.ndarray, feature_names: list[str] = AUDIO_FEATURES) -> str:
     """
     Assign a mood label based on dominant centroid audio characteristics.
 
@@ -63,7 +60,7 @@ def label_cluster(centroid: np.ndarray, feature_names: list[str] = FEATURE_NAMES
 
 
 def label_all_clusters(centroids: np.ndarray,
-                       feature_names: list[str] = FEATURE_NAMES) -> dict[int, str]:
+                       feature_names: list[str] = AUDIO_FEATURES) -> dict[int, str]:
     """Generate mood labels for all k clusters, handling duplicates."""
     labels = {}
     seen = {}
