@@ -66,13 +66,7 @@ data/processed_songs.parquet
 data/song_vectors.npy
 ```
 
-For the full two-mode app, the transformer extension also expects:
-
-```text
-models/saved/text_model.pth
-```
-
-At the time of writing, `text_model.pth` is already included in the online repository, but the three data files above must still be downloaded separately and placed locally.
+For the full two-mode app, the transformer extension uses the tracked model weights already included in the repository, together with the three local data files listed above.
 
 ---
 
@@ -90,7 +84,6 @@ Place them in these exact locations:
 data/tracks_features.csv
 data/processed_songs.parquet
 data/song_vectors.npy
-models/saved/text_model.pth
 ```
 
 ### Dataset reference
@@ -189,7 +182,6 @@ data/tracks_features.csv
 data/tracks_features.csv
 data/processed_songs.parquet
 data/song_vectors.npy
-models/saved/text_model.pth
 ```
 
 ---
@@ -226,6 +218,7 @@ pytest tests/
 
 ```text
 CSCI-UA-473-ML-Project/
+├── .gitignore
 ├── README.md
 ├── requirements.txt
 ├── data/
@@ -238,25 +231,30 @@ CSCI-UA-473-ML-Project/
 │       ├── audio_model.pth
 │       └── text_model.pth
 ├── src/
+│   ├── __init__.py
 │   ├── app.py
-│   ├── preprocess.py
 │   ├── kmeans.py
+│   ├── mood_labels.py
+│   ├── preprocess.py
 │   ├── recommend.py
 │   ├── reduce.py
-│   ├── mood_labels.py
 │   ├── vibe_extension.py
-│   ├── utils/
-│   │   ├── search.py
-│   │   ├── cards.py
-│   │   ├── df_helpers.py
-│   │   ├── thumbnails.py
-│   │   └── music_links.py
-│   └── models/
-│       ├── __init__.py
-│       └── transformer.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   └── transformer.py
+│   └── utils/
+│       ├── cards.py
+│       ├── df_helpers.py
+│       ├── music_links.py
+│       ├── search.py
+│       └── thumbnails.py
 ├── tests/
 │   └── test_kmeans.py
 └── training/
+    ├── autoencoder.py
+    ├── index.py
+    ├── train.py
+    └── transformer.py
 ```
 
 ---
