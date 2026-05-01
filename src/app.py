@@ -1040,7 +1040,8 @@ audio features matter (e.g. danceability vs. acousticness), and the clustering
 4. **Cluster** with from-scratch NumPy K-Means (k-means++ init, squared
    Euclidean distance) into `k` mood clusters.
 5. **Label** each cluster by inspecting its centroid against mood thresholds
-   in `mood_labels.py` (e.g. high energy + high valence → "Party 🎉").
+   in `mood_labels.py` (e.g. high energy + high danceability → "Party / Dance 🔥",
+   high energy + high valence → "Energetic & Upbeat ⚡").
 6. **Recommend** the nearest songs to the query within its cluster (weighted
    Euclidean distance), falling back to global search if the cluster is tiny.
 7. **Visualize** the 9D space in 2D via from-scratch PCA (SVD-based).
@@ -1074,8 +1075,10 @@ audio features matter (e.g. danceability vs. acousticness), and the clustering
   bounded in `[0, 1]` — min–max preserves that meaning.
 - `src/mood_labels.py` uses hard thresholds like `if valence > 0.65` — those
   only make sense in the original `[0, 1]` space.
-- Slider weights (0–5) stay interpretable: doubling a slider really does
-  double that axis's contribution to distance.
+- Slider weights (0–5) stay interpretable: raising a slider proportionally
+  increases that axis's contribution to distance while gently shrinking the
+  others, since `apply_feature_weights` renormalizes weights to preserve the
+  total energy across all features.
 
 ---
 
@@ -1108,7 +1111,13 @@ src/
 ├── models/
 │   └── transformer.py  ← char-level Transformer for vibe search
 └── utils/
-    └── music_links.py  ← Spotify / YT Music / YouTube-video search URLs
+    ├── cards.py        ← song-card UI rendering
+    ├── df_helpers.py   ← shared artist/dedup-key/column helpers
+    ├── music_links.py  ← Spotify / YT Music / YouTube-video search URLs
+    └── thumbnails.py   ← YouTube video-ID lookup + cache + thumbnails
+
+tests/
+└── test_kmeans.py      ← unit tests for the from-scratch KMeans
 ```
 """)
 
