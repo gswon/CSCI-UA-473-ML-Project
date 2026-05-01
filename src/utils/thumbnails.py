@@ -23,6 +23,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from utils.df_helpers import clean_artist as _clean_artist, dedup_key as _cache_key
+
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 CACHE_FILE = PROJECT_ROOT / "data" / "video_id_cache.json"
@@ -60,14 +62,6 @@ def _save_cache() -> None:
         tmp.replace(CACHE_FILE)
     except Exception:
         pass
-
-
-def _clean_artist(artist: str) -> str:
-    return str(artist).replace("[", "").replace("]", "").replace("'", "").strip()
-
-
-def _cache_key(name: str, artist: str) -> str:
-    return f"{str(name).strip().lower()}||{_clean_artist(artist).lower()}"
 
 
 def _fetch_http(name: str, artist: str, timeout: float = 3.0) -> str:

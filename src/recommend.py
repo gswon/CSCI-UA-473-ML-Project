@@ -3,7 +3,7 @@ import pandas as pd
 
 from kmeans import KMeans
 from preprocess import apply_feature_weights, AUDIO_FEATURES
-from utils.df_helpers import get_name_col, get_artist_col
+from utils.df_helpers import get_name_col, get_artist_col, dedup_key_series
 
 
 def get_recommendations(
@@ -62,14 +62,8 @@ def get_recommendations(
     name_col   = get_name_col(results)
     artist_col = get_artist_col(results)
     if name_col in results.columns and artist_col in results.columns:
-        dedup_key = (
-            results[name_col].astype(str).str.strip().str.lower()
-            + "||"
-            + results[artist_col].astype(str)
-                .str.replace(r"[\[\]']", "", regex=True)
-                .str.strip().str.lower()
-        )
-        results = results[~dedup_key.duplicated()]
+        key = dedup_key_series(results[name_col], results[artist_col])
+        results = results[~key.duplicated()]
 
     return results.head(top_n)
 

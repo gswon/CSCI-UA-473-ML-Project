@@ -8,10 +8,8 @@ import torch
 
 from models.transformer import TextTransformer
 from utils.cards import render_song_card
-from utils.music_links import (
-    generate_spotify_search_url,
-    generate_youtube_music_search_url,
-)
+from utils.df_helpers import clean_artist_series, dedup_key_series
+from utils.music_links import search_links
 from utils.thumbnails import get_video_ids_batch
 
 
@@ -173,13 +171,9 @@ def render_vibe_extension(top_n=10):
         # compilations, so taking head(top_n) first would surface the same
         # song twice with near-identical scores.
         ranked = candidate_df.sort_values(by="final_score", ascending=False).reset_index(drop=True)
-        ranked["clean_artists"] = ranked["artists"].astype(str).str.replace(r"\[|\]|'", "", regex=True)
-        dedup_key = (
-            ranked["name"].astype(str).str.strip().str.lower()
-            + "||"
-            + ranked["clean_artists"].astype(str).str.strip().str.lower()
-        )
-        top_results = ranked[~dedup_key.duplicated()].head(top_n).reset_index(drop=True)
+        ranked["clean_artists"] = clean_artist_series(ranked["artists"])
+        key = dedup_key_series(ranked["name"], ranked["artists"])
+        top_results = ranked[~key.duplicated()].head(top_n).reset_index(drop=True)
 
     st.subheader(f"Top {top_n} matching songs for *'{query}'*")
 
@@ -212,13 +206,12 @@ def render_vibe_extension(top_n=10):
             _seed = str(_row.get("id", _pos))
             _name = str(_row["name"])
             _artist = str(_row["clean_artists"])
-            _sp_url = generate_spotify_search_url(_name, _artist)
-            _yt_url = generate_youtube_music_search_url(_name, _artist)
+            _links = search_links(_name, _artist)
             _vid = _vid_map.get((_name, _artist), "")
             with _cols[_ci]:
                 render_song_card(
                     name=_name, artist=_artist, seed=_seed,
-                    sp_url=_sp_url, yt_url=_yt_url,
+                    sp_url=_links["spotify"], yt_url=_links["ytmusic"],
                     video_id=_vid,
                 )
 

@@ -1,18 +1,33 @@
 import urllib.parse
-import streamlit as st
+
+from utils.df_helpers import clean_artist
+
+
+_SERVICE_PREFIXES = {
+    "spotify": "https://open.spotify.com/search/",
+    "ytmusic": "https://music.youtube.com/search?q=",
+}
+
+
+def _search_url(track_name, artist_name, service: str) -> str:
+    query = f"{track_name} {clean_artist(artist_name)}"
+    return _SERVICE_PREFIXES[service] + urllib.parse.quote(query)
+
 
 def generate_spotify_search_url(track_name, artist_name):
-    # Strip any brackets or single quotes from artist name
-    clean_artist = str(artist_name).replace('[', '').replace(']', '').replace("'", "")
-    query = f"{track_name} {clean_artist}"
-    encoded_query = urllib.parse.quote(query)
-    return f"https://open.spotify.com/search/{encoded_query}"
+    return _search_url(track_name, artist_name, "spotify")
+
 
 def generate_youtube_music_search_url(track_name, artist_name):
-    clean_artist = str(artist_name).replace('[', '').replace(']', '').replace("'", "")
-    query = f"{track_name} {clean_artist}"
-    encoded_query = urllib.parse.quote(query)
-    return f"https://music.youtube.com/search?q={encoded_query}"
+    return _search_url(track_name, artist_name, "ytmusic")
+
+
+def search_links(track_name, artist_name) -> dict:
+    return {
+        "spotify": _search_url(track_name, artist_name, "spotify"),
+        "ytmusic": _search_url(track_name, artist_name, "ytmusic"),
+    }
+
 
 def generate_youtube_play_url(track_name, artist_name):
     # Shared lookup path: cache hit → HTTP scrape → yt_dlp fallback.

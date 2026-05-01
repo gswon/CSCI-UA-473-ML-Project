@@ -25,11 +25,13 @@ from reduce import pca_reduce
 from mood_labels import label_all_clusters
 from vibe_extension import render_vibe_extension
 from utils.cards import render_song_card, render_stat
-from utils.df_helpers import get_name_col, get_artist_col
+from utils.df_helpers import (get_name_col, get_artist_col,
+                              clean_artist, clean_artist_series)
 from utils.thumbnails import get_video_id, get_video_ids_batch
 from utils.music_links import (generate_spotify_search_url,
                                generate_youtube_music_search_url,
-                               generate_youtube_play_url)
+                               generate_youtube_play_url,
+                               search_links)
 import time as _time
 
 # ---------------------------------------------------------------------------
@@ -186,7 +188,7 @@ def build_name_lookup(_df):
     name_col   = get_name_col(_df)
     artist_col = get_artist_col(_df)
     names   = _df[name_col].fillna("").astype(str)
-    artists = _df[artist_col].fillna("").astype(str).str.replace(r"[\[\]']", "", regex=True).str.strip()
+    artists = clean_artist_series(_df[artist_col].fillna(""))
     lower   = names.str.lower()
     return names.to_numpy(), artists.to_numpy(), lower
 
@@ -434,7 +436,7 @@ with tab1:
         # If the user picked a specific artist version, find that exact row.
         if query_artist_filter:
             _name_mask   = df_tab1[name_col].str.lower() == query_name.strip().lower()
-            _clean_arts  = df_tab1[artist_col].astype(str).str.replace(r"[\[\]']", "", regex=True).str.strip()
+            _clean_arts  = clean_artist_series(df_tab1[artist_col])
             _art_mask    = _clean_arts.str.lower() == query_artist_filter.lower()
             _exact       = df_tab1[_name_mask & _art_mask]
             if not _exact.empty:
@@ -462,9 +464,10 @@ with tab1:
             year         = df_tab1.iloc[query_idx].get("year", "—") if query_idx is not None else "—"
             _q_seed      = str(df_tab1.iloc[query_idx].get("id", query_idx)) if query_idx is not None else "query"
             _q_name      = str(query_name).strip()
-            _q_artist    = str(df_tab1.iloc[query_idx].get(artist_col, "")).replace("[", "").replace("]", "").replace("'", "").strip() if query_idx is not None else ""
-            _q_sp_url    = generate_spotify_search_url(_q_name, _q_artist)
-            _q_yt_url    = generate_youtube_music_search_url(_q_name, _q_artist)
+            _q_artist    = clean_artist(df_tab1.iloc[query_idx].get(artist_col, "")) if query_idx is not None else ""
+            _q_links     = search_links(_q_name, _q_artist)
+            _q_sp_url    = _q_links["spotify"]
+            _q_yt_url    = _q_links["ytmusic"]
             _q_vid       = get_video_id(_q_name, _q_artist) if _q_name else ""
 
             st.subheader("🎯 Your pick")
@@ -520,7 +523,7 @@ with tab1:
                     weights=weight_vector, top_n=top_n
                 )
 
-                recs[artist_col] = recs[artist_col].astype(str).str.replace(r"\[|\]|'", "", regex=True)
+                recs[artist_col] = clean_artist_series(recs[artist_col])
                 recs["YouTube Music"] = recs.apply(
                     lambda row: generate_youtube_music_search_url(row[name_col], row[artist_col]), axis=1)
                 recs["Spotify"] = recs.apply(
@@ -1134,8 +1137,9 @@ if "now_playing" in st.session_state:
                     vid = ""
                 # Build Spotify / YT Music URLs directly from (name, artist) so
                 # this block no longer depends on Tab 1's `recs` DataFrame.
-                sp_url = generate_spotify_search_url(track["name"], track["artist"])
-                yt_url = generate_youtube_music_search_url(track["name"], track["artist"])
+                _links = search_links(track["name"], track["artist"])
+                sp_url = _links["spotify"]
+                yt_url = _links["ytmusic"]
                 return t_idx, {
                     "name":     track["name"],
                     "artist":   track["artist"],
