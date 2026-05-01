@@ -246,7 +246,6 @@ CSCI-UA-473-ML-Project/
 │       ├── cards.py
 │       ├── df_helpers.py
 │       ├── music_links.py
-│       ├── search.py
 │       └── thumbnails.py
 ├── tests/
 │   └── test_kmeans.py
@@ -360,18 +359,7 @@ Inertia is the k-means objective evaluated on the final clustering: the total wi
 
 This was included because the course expects algorithmic decisions to be justified, not chosen arbitrarily.
 
-### 7. Song Search Engine (`src/utils/search.py`)
-
-Typing in the search box uses a tiered search pipeline designed to remain responsive on a very large dataset.
-
-The search logic includes:
-- **prefix matching** using binary search over sorted normalized song names,
-- **substring matching** using a trigram inverted index,
-- **fuzzy matching** using a BK-tree with Damerau-Levenshtein distance.
-
-This makes the UI fast enough for a large dataset while still supporting typo tolerance and partial queries.
-
-### 8. Transformer-Based Vibe Search (`src/models/transformer.py`, `src/vibe_extension.py`)
+### 7. Transformer-Based Vibe Search (`src/models/transformer.py`, `src/vibe_extension.py`)
 
 The vibe extension supports natural-language prompts such as:
 - `late night driving`
@@ -392,20 +380,22 @@ The Transformer includes:
 
 This produces one dense embedding for the entire query sentence.
 
-### 9. Offline Transformer Training and Preprocessing
+### 8. Offline Transformer Training and Preprocessing
 
 The transformer extension depends on an **offline pipeline** that was run before the assets were imported into this repository.
 
 The relevant files for that process are:
-- `pipeline/reduce_dataset.py`
-- `pipeline/train.py`
-- `pipeline/index_builder.py`
+- `training/transformer.py`
+- `training/autoencoder.py`
+- `training/train.py`
+- `training/index.py`
 
 #### What those steps do
 
-1. **`reduce_dataset.py`** reduces the very large song dataset to a manageable subset for training and experimentation.
-2. **`train.py`** trains the text-side Transformer together with the song-side embedding model.
-3. **`index_builder.py`** generates the precomputed song embedding matrix used at inference time.
+1. **`transformer.py`** defines the text-side Transformer architecture used during training.
+2. **`autoencoder.py`** defines the song-side embedding model.
+3. **`train.py`** trains the text-side Transformer together with the song-side embedding model.
+4. **`index.py`** generates the precomputed song embedding matrix used at inference time.
 
 #### What training learns
 
@@ -420,7 +410,7 @@ Training is based on a contrastive alignment objective plus song-side reconstruc
 
 At runtime, this is what allows a sentence prompt to retrieve musically relevant candidates.
 
-### 10. Semantic Retrieval + Slider Reranking (`src/vibe_extension.py`)
+### 9. Semantic Retrieval + Slider Reranking (`src/vibe_extension.py`)
 
 The vibe extension uses precomputed local assets:
 - `processed_songs.parquet`
@@ -443,7 +433,7 @@ This makes the vibe mode both:
 - **semantic** (matching the meaning of the sentence), and
 - **interactive** (letting the user refine the results in real time).
 
-### 11. Why These Methods Fit the Course
+### 10. Why These Methods Fit the Course
 
 This project directly reflects the course themes emphasized in the syllabus:
 - **vector representations**
