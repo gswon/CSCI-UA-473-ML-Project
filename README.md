@@ -202,14 +202,6 @@ If the transformer-extension assets are missing, the song mode will still work, 
 
 ---
 
-## Running the EDA Notebook
-
-```bash
-jupyter notebook notebooks/eda.ipynb
-```
-
----
-
 ## Running Tests
 
 ```bash
@@ -232,8 +224,6 @@ CSCI-UA-473-ML-Project/
 ├── models/
 │   └── saved/
 │       └── text_model.pth         # local transformer weights file
-├── notebooks/
-│   └── eda.ipynb
 ├── src/
 │   ├── app.py
 │   ├── preprocess.py
